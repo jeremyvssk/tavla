@@ -159,7 +159,7 @@ Served via nginx at `/images/**`. Not suitable for production scale — use S3 l
 
 - Access token: JS module variable only. Never localStorage/sessionStorage.
   On page reload → call `/auth/refresh` on mount to rehydrate.
-- Refresh rotation: Redis MULTI/EXEC or Lua to atomically swap tokens.
+- Refresh rotation: Redis Lua script to atomically swap tokens.
   Old token replayed = key gone = rejected.
 - Password reset: revokes ALL refresh tokens for that user (iterate `refresh_tokens_user` set).
 - 2FA: partial session via Redis challenge key after password OK, full JWT only after TOTP.
