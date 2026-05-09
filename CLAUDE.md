@@ -123,6 +123,8 @@ Domains (P1): `user`, `auth`, `catalog`
 
 See [docs/FOLDER_STRUCTURE.md](docs/FOLDER_STRUCTURE.md)
 
+When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md) — backend-specific operating rules (validation, auth, persistence, 12-factor).
+
 ## Database Schema (Flyway migrations)
 
 **users** — id UUID, email unique, password_hash, full_name, avatar_url,
