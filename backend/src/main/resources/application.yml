@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: i-love-shopping-backend
+
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc.time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
+  data:
+    redis:
+      url: ${REDIS_URL}
+
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 10MB
+
+server:
+  port: 8080
+  tomcat:
+    max-http-form-post-size: 1MB

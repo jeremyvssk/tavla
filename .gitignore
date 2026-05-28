@@ -1,3 +1,14 @@
 .claude
 docs
 homework
+
+# Env
+.env
+
+# Build artifacts (added as backend/frontend appear)
+target/
+node_modules/
+dist/
+.idea/
+.vscode/
+*.iml
