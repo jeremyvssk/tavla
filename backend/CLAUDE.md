@@ -2,7 +2,7 @@
 
 Operating rules for code under `backend/`. Root [CLAUDE.md](../CLAUDE.md) still applies (working style, simplicity, surgical changes). This file adds backend-specific constraints.
 
-For the *why* behind validation rules, see [../docs/backendInputValidation.md](../docs/backendInputValidation.md). This file is the *what to do*.
+For the *why* behind validation rules, see [../claude-docs/backendInputValidation.md](../claude-docs/backendInputValidation.md). This file is the *what to do*.
 
 ---
 
@@ -55,7 +55,7 @@ For the *why* behind validation rules, see [../docs/backendInputValidation.md](.
   - Jackson `StreamReadConstraints` (max nesting depth, max string length, max number length)
 - **Jackson rejects unknown fields:** `spring.jackson.deserialization.fail-on-unknown-properties: true`. Mass-assignment guard.
 - **Passwords are NFC-normalized before BCrypt**, on both register and login. Never ban accents.
-- **File uploads run the full checklist** (size cap, content-type whitelist, magic-byte sniff, dimension limits, re-encode through library, UUID filename, served with `Content-Disposition: attachment` from a separate path). See [../docs/backendInputValidation.md §6](../docs/backendInputValidation.md).
+- **File uploads run the full checklist** (size cap, content-type whitelist, magic-byte sniff, dimension limits, re-encode through library, UUID filename, served with `Content-Disposition: attachment` from a separate path). See [../claude-docs/backendInputValidation.md §6](../claude-docs/backendInputValidation.md).
 - **Validate at the boundary, encode at the sink.** Parameterized queries protect the SQL sink only; HTML/log/header/path sinks each need their own encoder.
 
 ## 8. Auth and security rules

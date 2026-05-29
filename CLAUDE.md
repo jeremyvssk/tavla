@@ -121,7 +121,7 @@ Domains (P1): `user`, `auth`, `catalog`
 
 ## Folder Structure
 
-See [docs/FOLDER_STRUCTURE.md](docs/FOLDER_STRUCTURE.md)
+See [claude-docs/FOLDER_STRUCTURE.md](claude-docs/FOLDER_STRUCTURE.md)
 
 When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md) — backend-specific operating rules (validation, auth, persistence, 12-factor).
 
@@ -172,7 +172,7 @@ Served via nginx at `/images/**`. Not suitable for production scale — use S3 l
 
 ## Build Order (P1)
 
-See [docs/BUILD_ORDER.md](docs/BUILD_ORDER.md)
+See [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md)
 
 ## Open Questions / Known Gaps
 
