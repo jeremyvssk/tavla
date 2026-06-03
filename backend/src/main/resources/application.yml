@@ -44,3 +44,10 @@ server:
   port: 8080
   tomcat:
     max-http-form-post-size: 1MB
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    access-token-ttl: ${JWT_ACCESS_TTL:PT15M}
+  refresh-token:
+    ttl: ${JWT_REFRESH_TTL:P7D}

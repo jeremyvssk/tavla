@@ -56,6 +56,14 @@ public class UserService {
         return userRepository.findByEmail(email);
     }
 
+    /**
+     * Verifies a raw password against a user's stored hash. The password is NFC-normalized
+     * the same way it was at registration so accented characters match consistently.
+     */
+    public boolean passwordMatches(User user, String rawPassword) {
+        return passwordEncoder.matches(normalizePassword(rawPassword), user.getPasswordHash());
+    }
+
     static String normalizePassword(String raw) {
         return Normalizer.normalize(raw, Normalizer.Form.NFC);
     }

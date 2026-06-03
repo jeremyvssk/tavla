@@ -6,6 +6,41 @@ For the *why* behind validation rules, see [../claude-docs/backendInputValidatio
 
 ---
 
+## 0. Stack versions (pinned — use these APIs, don't guess)
+
+Versions come from the Spring Boot parent BOM (`4.0.6`) unless an explicit `<version>` is set in `pom.xml`. **This is Spring Boot 4 / Spring Framework 7 / Jakarta EE 11 — not Boot 3.** APIs differ from most older tutorials.
+
+| Area | Library | Version |
+|---|---|---|
+| Language | Java | 21 |
+| Framework | Spring Boot | 4.0.6 |
+| | Spring Framework | 7.0.7 |
+| | Spring Security | 7.0.5 |
+| | Spring Data JPA / Redis | 4.0.5 |
+| Persistence | Hibernate ORM | 7.2.12.Final |
+| | Flyway | 11.14.1 (+ `spring-boot-flyway` module, `flyway-database-postgresql`) |
+| | PostgreSQL JDBC | 42.7.10 |
+| Web | Tomcat (embedded) | 11.0.21 |
+| JSON | **Jackson 3** (`tools.jackson.databind`) | 3.1.2 |
+| Redis client | Lettuce | 6.8.2 |
+| Auth | jjwt (`io.jsonwebtoken`, api/impl/jackson) | 0.12.5 |
+| 2FA | TOTP (`dev.samstevens.totp`) | 1.7.1 |
+| Boilerplate | Lombok | 1.18.46 |
+| Test | JUnit Jupiter | 6.0.3 |
+| | Mockito | 5.20.0 |
+| | AssertJ | 3.27.7 |
+| | spring-test / spring-security-test | 7.0.7 / 7.0.5 |
+| | Testcontainers (junit-jupiter, postgresql) | 1.21.3 |
+
+**Boot 4 gotchas already hit (don't relearn them):**
+- **Jackson 3 is the default.** The managed `ObjectMapper` bean is `tools.jackson.databind.ObjectMapper`, *not* `com.fasterxml.jackson.databind.ObjectMapper` (that one exists only transitively and has no bean). Jackson 3 renamed some `JsonNode` accessors (e.g. `asText()` → `asString()`). Annotations stay under `com.fasterxml.jackson.annotation` (e.g. `@JsonInclude`), shared with Jackson 3.
+- **Autoconfig is split into per-tech modules.** Flyway needs the `spring-boot-flyway` dependency — `flyway-core` alone won't run migrations. Same pattern for other slices.
+- **`@AutoConfigureMockMvc` lives in `spring-boot-webmvc-test`, which is not on the classpath.** Integration tests build MockMvc manually: `MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()`.
+
+**Lombok usage:** use it for boilerplate on JPA entities — `@Getter @Setter` (and `@NoArgsConstructor`/`@AllArgsConstructor` if needed), as in `user/User.java`. **DTOs are Java records, not Lombok classes.** Loggers are plain SLF4J (`LoggerFactory.getLogger`), not `@Slf4j`. Lombok is `provided`/optional and excluded from the boot jar.
+
+---
+
 ## 1. Architecture invariants
 
 - **Stateless processes.** No `HttpSession`, no in-memory user state, no static maps holding per-user data. All session-like state lives in Redis. Any instance must be able to serve any request.
