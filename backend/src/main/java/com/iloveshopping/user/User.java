@@ -29,7 +29,8 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(name = "password_hash", nullable = false)
+    // Null for OAuth users (no local password); a DB CHECK still requires it for LOCAL accounts.
+    @Column(name = "password_hash")
     private String passwordHash;
 
     @Column(name = "full_name", nullable = false)

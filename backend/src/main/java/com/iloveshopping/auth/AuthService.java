@@ -3,6 +3,8 @@ package com.iloveshopping.auth;
 
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
+import com.iloveshopping.user.AuthProvider;
+import com.iloveshopping.user.OAuthUserInfo;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
 import org.springframework.stereotype.Service;
@@ -16,11 +18,14 @@ public class AuthService {
     private final UserService userService;
     private final JwtService jwtService;
     private final TokenStoreService tokenStore;
+    private final GoogleTokenVerifier googleTokenVerifier;
 
-    public AuthService(UserService userService, JwtService jwtService, TokenStoreService tokenStore) {
+    public AuthService(UserService userService, JwtService jwtService, TokenStoreService tokenStore,
+                       GoogleTokenVerifier googleTokenVerifier) {
         this.userService = userService;
         this.jwtService = jwtService;
         this.tokenStore = tokenStore;
+        this.googleTokenVerifier = googleTokenVerifier;
     }
 
     public User register(String email, String rawPassword, String fullName) {
@@ -30,9 +35,17 @@ public class AuthService {
     public AuthTokens login(String email, String rawPassword) {
         User user = userService.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
-        if (!userService.passwordMatches(user, rawPassword)) {
+        // OAuth accounts have no local password; reject before touching the (null) hash.
+        if (user.getAuthProvider() != AuthProvider.LOCAL || !userService.passwordMatches(user, rawPassword)) {
             throw new InvalidCredentialsException();
         }
+        return issueTokens(user);
+    }
+
+    /** Verifies a Google ID token, finds or creates the matching user, and issues our own tokens. */
+    public AuthTokens oauthLoginGoogle(String idToken) {
+        OAuthUserInfo info = googleTokenVerifier.verify(idToken);
+        User user = userService.findOrCreateOAuthUser(info);
         return issueTokens(user);
     }
 

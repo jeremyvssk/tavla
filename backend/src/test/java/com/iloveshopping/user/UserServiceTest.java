@@ -2,6 +2,7 @@
 package com.iloveshopping.user;
 
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
+import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,6 +72,47 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.createLocalUser("race@example.com", "pw", "Race"))
                 .isInstanceOf(EmailAlreadyExistsException.class);
+    }
+
+    @Test
+    void findOrCreateOAuthUser_returnsExistingByProviderId() {
+        User existing = new User();
+        when(userRepository.findByAuthProviderAndOauthProviderId(AuthProvider.GOOGLE, "sub-1"))
+                .thenReturn(Optional.of(existing));
+
+        OAuthUserInfo info = new OAuthUserInfo(AuthProvider.GOOGLE, "sub-1", "x@gmail.com", "X", null, true);
+        assertThat(userService.findOrCreateOAuthUser(info)).isSameAs(existing);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void findOrCreateOAuthUser_createsNewWithoutPasswordWhenAbsent() {
+        when(userRepository.findByAuthProviderAndOauthProviderId(AuthProvider.GOOGLE, "sub-2"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByEmail("new@gmail.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        OAuthUserInfo info =
+                new OAuthUserInfo(AuthProvider.GOOGLE, "sub-2", "new@gmail.com", "New User", "http://pic", true);
+        User created = userService.findOrCreateOAuthUser(info);
+
+        assertThat(created.getAuthProvider()).isEqualTo(AuthProvider.GOOGLE);
+        assertThat(created.getOauthProviderId()).isEqualTo("sub-2");
+        assertThat(created.getEmail()).isEqualTo("new@gmail.com");
+        assertThat(created.getPasswordHash()).isNull();
+        assertThat(created.isEmailVerified()).isTrue();
+    }
+
+    @Test
+    void findOrCreateOAuthUser_rejectsWhenEmailBelongsToAnotherAccount() {
+        when(userRepository.findByAuthProviderAndOauthProviderId(AuthProvider.GOOGLE, "sub-3"))
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByEmail("taken@gmail.com")).thenReturn(true);
+
+        OAuthUserInfo info = new OAuthUserInfo(AuthProvider.GOOGLE, "sub-3", "taken@gmail.com", "Taken", null, true);
+        assertThatThrownBy(() -> userService.findOrCreateOAuthUser(info))
+                .isInstanceOf(EmailRegisteredWithPasswordException.class);
+        verify(userRepository, never()).save(any());
     }
 
     @Test

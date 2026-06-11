@@ -2,8 +2,10 @@
 package com.iloveshopping.exception;
 
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
+import com.iloveshopping.auth.exception.InvalidOAuthTokenException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
+import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +41,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({InvalidCredentialsException.class, InvalidRefreshTokenException.class})
     public ResponseEntity<ErrorResponse> handleAuthFailure(RuntimeException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("invalid_credentials"));
+    }
+
+    @ExceptionHandler(InvalidOAuthTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidOAuth(InvalidOAuthTokenException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("invalid_oauth_token"));
+    }
+
+    @ExceptionHandler(EmailRegisteredWithPasswordException.class)
+    public ResponseEntity<ErrorResponse> handleEmailRegistered(EmailRegisteredWithPasswordException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("email_registered_with_password"));
     }
 
     @ExceptionHandler(UserNotFoundException.class)

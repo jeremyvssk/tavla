@@ -2,6 +2,7 @@
 package com.iloveshopping.user;
 
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
+import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,6 +43,35 @@ public class UserService {
             return userRepository.save(user);
         } catch (DataIntegrityViolationException e) {
             throw new EmailAlreadyExistsException();
+        }
+    }
+
+    /**
+     * Returns the existing user for this OAuth identity, or creates one. We never link OAuth
+     * login to a pre-existing account that shares the email — that's an account-takeover vector —
+     * so a clashing email is rejected with {@link EmailRegisteredWithPasswordException}.
+     */
+    @Transactional
+    public User findOrCreateOAuthUser(OAuthUserInfo info) {
+        return userRepository.findByAuthProviderAndOauthProviderId(info.provider(), info.providerId())
+                .orElseGet(() -> createOAuthUser(info));
+    }
+
+    private User createOAuthUser(OAuthUserInfo info) {
+        if (userRepository.existsByEmail(info.email())) {
+            throw new EmailRegisteredWithPasswordException();
+        }
+        User user = new User();
+        user.setEmail(info.email());
+        user.setFullName(info.fullName());
+        user.setAvatarUrl(info.avatarUrl());
+        user.setAuthProvider(info.provider());
+        user.setOauthProviderId(info.providerId());
+        user.setEmailVerified(info.emailVerified());
+        try {
+            return userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            throw new EmailRegisteredWithPasswordException();
         }
     }
 

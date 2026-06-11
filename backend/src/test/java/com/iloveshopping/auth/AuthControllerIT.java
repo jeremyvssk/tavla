@@ -9,8 +9,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.security.oauth2.jwt.BadJwtException;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -19,9 +23,11 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
@@ -49,6 +55,7 @@ class AuthControllerIT {
         registry.add("spring.data.redis.url",
                 () -> "redis://" + redis.getHost() + ":" + redis.getMappedPort(6379));
         registry.add("app.jwt.secret", () -> "integration-test-secret-that-is-long-enough-hs256");
+        registry.add("app.oauth.google.client-id", () -> "test-client-id");
         // Mail is unused in these tests; a host just satisfies the auto-configuration.
         registry.add("spring.mail.host", () -> "localhost");
         registry.add("spring.mail.port", () -> "1025");
@@ -56,6 +63,10 @@ class AuthControllerIT {
 
     @Autowired
     WebApplicationContext context;
+
+    // Replaces the real Google decoder so tests never call Google; we stub the decoded claims.
+    @MockitoBean
+    JwtDecoder googleIdTokenDecoder;
 
     MockMvc mockMvc;
 
@@ -152,6 +163,49 @@ class AuthControllerIT {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    void googleLogin_withValidIdToken_createsUserAndReturnsTokens() throws Exception {
+        String email = uniqueEmail();
+        when(googleIdTokenDecoder.decode("google-token")).thenReturn(googleJwt("sub-" + email, email, "Google User"));
+
+        mockMvc.perform(googleLogin("google-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(cookie().exists(AuthController.REFRESH_COOKIE))
+                .andExpect(cookie().httpOnly(AuthController.REFRESH_COOKIE, true));
+    }
+
+    @Test
+    void googleLogin_withInvalidIdToken_returns401() throws Exception {
+        when(googleIdTokenDecoder.decode("bad-token")).thenThrow(new BadJwtException("bad signature"));
+
+        mockMvc.perform(googleLogin("bad-token"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_oauth_token"));
+    }
+
+    @Test
+    void googleLogin_whenEmailRegisteredWithPassword_returns409() throws Exception {
+        String email = uniqueEmail();
+        mockMvc.perform(register(email, "password123", "Local User")).andExpect(status().isCreated());
+        when(googleIdTokenDecoder.decode("token-collision")).thenReturn(googleJwt("sub-collide", email, "Google User"));
+
+        mockMvc.perform(googleLogin("token-collision"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("email_registered_with_password"));
+    }
+
+    @Test
+    void passwordLogin_againstOAuthAccount_returns401() throws Exception {
+        String email = uniqueEmail();
+        when(googleIdTokenDecoder.decode("oauth-token")).thenReturn(googleJwt("sub-" + email, email, "Google User"));
+        mockMvc.perform(googleLogin("oauth-token")).andExpect(status().isOk());
+
+        mockMvc.perform(login(email, "any-password"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_credentials"));
+    }
+
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder register(
             String email, String password, String fullName) {
         String body = """
@@ -164,6 +218,24 @@ class AuthControllerIT {
         String body = """
                 {"email":"%s","password":"%s"}""".formatted(email, password);
         return post("/auth/login").contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+
+    private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder googleLogin(String idToken) {
+        String body = """
+                {"idToken":"%s"}""".formatted(idToken);
+        return post("/auth/oauth/google").contentType(MediaType.APPLICATION_JSON).content(body);
+    }
+
+    private Jwt googleJwt(String sub, String email, String name) {
+        return Jwt.withTokenValue("token")
+                .header("alg", "RS256")
+                .subject(sub)
+                .claim("email", email)
+                .claim("email_verified", true)
+                .claim("name", name)
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(3600))
+                .build();
     }
 
     private String accessToken(MvcResult result) throws Exception {

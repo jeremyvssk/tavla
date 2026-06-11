@@ -1,6 +1,7 @@
 // REST endpoints for register/login/refresh/logout; refresh token travels as an httpOnly cookie.
 package com.iloveshopping.auth;
 
+import com.iloveshopping.auth.dto.GoogleLoginRequest;
 import com.iloveshopping.auth.dto.LoginRequest;
 import com.iloveshopping.auth.dto.RegisterRequest;
 import com.iloveshopping.auth.dto.RegisterResponse;
@@ -44,6 +45,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         AuthTokens tokens = authService.login(request.email(), request.password());
+        return tokenResponse(tokens);
+    }
+
+    @PostMapping("/oauth/google")
+    public ResponseEntity<TokenResponse> googleLogin(@Valid @RequestBody GoogleLoginRequest request) {
+        AuthTokens tokens = authService.oauthLoginGoogle(request.idToken());
         return tokenResponse(tokens);
     }
 
