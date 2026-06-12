@@ -36,7 +36,8 @@ public class SecurityConfig {
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST,
-                                "/auth/register", "/auth/login", "/auth/refresh", "/auth/oauth/google")
+                                "/auth/register", "/auth/login", "/auth/refresh", "/auth/oauth/google",
+                                "/auth/forgot-password", "/auth/reset-password", "/auth/2fa/login")
                         .permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex

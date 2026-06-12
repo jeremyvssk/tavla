@@ -8,5 +8,7 @@ import jakarta.validation.constraints.Size;
 public record RegisterRequest(
         @NotBlank @Email @Size(max = 255) String email,
         @NotBlank @Size(min = 8, max = 72) String password,
-        @NotBlank @Size(max = 255) String fullName) {
+        @NotBlank @Size(max = 255) String fullName,
+        // reCAPTCHA token; only enforced when app.recaptcha.enabled=true, so left unvalidated here.
+        String captchaToken) {
 }

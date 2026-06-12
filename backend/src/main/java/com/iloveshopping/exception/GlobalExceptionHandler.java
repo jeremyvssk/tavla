@@ -1,9 +1,12 @@
 // Central mapping of domain and validation exceptions to HTTP responses.
 package com.iloveshopping.exception;
 
+import com.iloveshopping.auth.exception.InvalidCaptchaException;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidOAuthTokenException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
+import com.iloveshopping.auth.exception.InvalidResetTokenException;
+import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
 import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
@@ -46,6 +49,21 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidOAuthTokenException.class)
     public ResponseEntity<ErrorResponse> handleInvalidOAuth(InvalidOAuthTokenException e) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("invalid_oauth_token"));
+    }
+
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidResetToken(InvalidResetTokenException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("invalid_reset_token"));
+    }
+
+    @ExceptionHandler(InvalidCaptchaException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCaptcha(InvalidCaptchaException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("captcha_failed"));
+    }
+
+    @ExceptionHandler(InvalidTwoFactorCodeException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTwoFactor(InvalidTwoFactorCodeException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("invalid_2fa_code"));
     }
 
     @ExceptionHandler(EmailRegisteredWithPasswordException.class)

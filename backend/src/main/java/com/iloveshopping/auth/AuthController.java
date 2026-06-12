@@ -6,6 +6,8 @@ import com.iloveshopping.auth.dto.LoginRequest;
 import com.iloveshopping.auth.dto.RegisterRequest;
 import com.iloveshopping.auth.dto.RegisterResponse;
 import com.iloveshopping.auth.dto.TokenResponse;
+import com.iloveshopping.auth.dto.TwoFactorChallengeResponse;
+import com.iloveshopping.auth.dto.TwoFactorLoginRequest;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.user.User;
 import jakarta.validation.Valid;
@@ -30,21 +32,34 @@ public class AuthController {
     private static final String COOKIE_PATH = "/auth";
 
     private final AuthService authService;
+    private final CaptchaService captchaService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, CaptchaService captchaService) {
         this.authService = authService;
+        this.captchaService = captchaService;
     }
 
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
+        captchaService.verify(request.captchaToken());
         User user = authService.register(request.email(), request.password(), request.fullName());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new RegisterResponse(user.getId(), user.getEmail()));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
-        AuthTokens tokens = authService.login(request.email(), request.password());
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        LoginResult result = authService.login(request.email(), request.password());
+        if (result.twoFactorRequired()) {
+            // Password was correct but 2FA is on: hand back a challenge, no tokens or cookie yet.
+            return ResponseEntity.ok(new TwoFactorChallengeResponse(true, result.twoFactorChallenge()));
+        }
+        return tokenResponse(result.tokens());
+    }
+
+    @PostMapping("/2fa/login")
+    public ResponseEntity<TokenResponse> twoFactorLogin(@Valid @RequestBody TwoFactorLoginRequest request) {
+        AuthTokens tokens = authService.twoFactorLogin(request.challenge(), request.code());
         return tokenResponse(tokens);
     }
 

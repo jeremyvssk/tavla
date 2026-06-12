@@ -54,3 +54,13 @@ app:
   oauth:
     google:
       client-id: ${GOOGLE_CLIENT_ID}
+  mail:
+    from: ${MAIL_FROM:noreply@iloveshopping.local}
+  frontend:
+    reset-url: ${FRONTEND_RESET_URL:http://localhost:5173/reset}
+  recaptcha:
+    enabled: ${RECAPTCHA_ENABLED:false}
+    secret-key: ${RECAPTCHA_SECRET_KEY:}
+    verify-url: https://www.google.com/recaptcha/api/siteverify
+  two-factor:
+    issuer: ${TWO_FACTOR_ISSUER:i-love-shopping}

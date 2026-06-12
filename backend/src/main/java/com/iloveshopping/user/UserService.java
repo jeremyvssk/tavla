@@ -94,6 +94,52 @@ public class UserService {
         return passwordEncoder.matches(normalizePassword(rawPassword), user.getPasswordHash());
     }
 
+    /**
+     * Sets a new password for a user, NFC-normalized and BCrypted the same way as registration.
+     * Used by the password-reset flow.
+     */
+    @Transactional
+    public void updatePassword(UUID userId, String rawPassword) {
+        User user = getById(userId);
+        user.setPasswordHash(passwordEncoder.encode(normalizePassword(rawPassword)));
+        userRepository.save(user);
+    }
+
+    /** Stores a pending TOTP secret. 2FA stays disabled until the user verifies a code. */
+    @Transactional
+    public void setTwoFactorSecret(UUID userId, String secret) {
+        User user = getById(userId);
+        user.setTwoFactorSecret(secret);
+        userRepository.save(user);
+    }
+
+    /** Turns 2FA on and stores the (already hashed) backup codes. */
+    @Transactional
+    public void enableTwoFactor(UUID userId, String hashedBackupCodes) {
+        User user = getById(userId);
+        user.setTwoFactorEnabled(true);
+        user.setTwoFactorBackupCodes(hashedBackupCodes);
+        userRepository.save(user);
+    }
+
+    /** Turns 2FA off and clears the secret and backup codes. */
+    @Transactional
+    public void disableTwoFactor(UUID userId) {
+        User user = getById(userId);
+        user.setTwoFactorEnabled(false);
+        user.setTwoFactorSecret(null);
+        user.setTwoFactorBackupCodes(null);
+        userRepository.save(user);
+    }
+
+    /** Overwrites the stored backup codes, e.g. after one is consumed at login. */
+    @Transactional
+    public void replaceBackupCodes(UUID userId, String hashedBackupCodes) {
+        User user = getById(userId);
+        user.setTwoFactorBackupCodes(hashedBackupCodes);
+        userRepository.save(user);
+    }
+
     static String normalizePassword(String raw) {
         return Normalizer.normalize(raw, Normalizer.Form.NFC);
     }

@@ -3,6 +3,7 @@ package com.iloveshopping.auth;
 
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
+import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
 import com.iloveshopping.user.AuthProvider;
 import com.iloveshopping.user.OAuthUserInfo;
 import com.iloveshopping.user.User;
@@ -19,26 +20,51 @@ public class AuthService {
     private final JwtService jwtService;
     private final TokenStoreService tokenStore;
     private final GoogleTokenVerifier googleTokenVerifier;
+    private final TwoFactorService twoFactorService;
 
     public AuthService(UserService userService, JwtService jwtService, TokenStoreService tokenStore,
-                       GoogleTokenVerifier googleTokenVerifier) {
+                       GoogleTokenVerifier googleTokenVerifier, TwoFactorService twoFactorService) {
         this.userService = userService;
         this.jwtService = jwtService;
         this.tokenStore = tokenStore;
         this.googleTokenVerifier = googleTokenVerifier;
+        this.twoFactorService = twoFactorService;
     }
 
     public User register(String email, String rawPassword, String fullName) {
         return userService.createLocalUser(email, rawPassword, fullName);
     }
 
-    public AuthTokens login(String email, String rawPassword) {
+    /**
+     * Verifies the password. If 2FA is enabled, no tokens are issued yet — a short-lived challenge is
+     * returned and the caller must complete {@link #twoFactorLogin}. Otherwise tokens are issued.
+     */
+    public LoginResult login(String email, String rawPassword) {
         User user = userService.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
         // OAuth accounts have no local password; reject before touching the (null) hash.
         if (user.getAuthProvider() != AuthProvider.LOCAL || !userService.passwordMatches(user, rawPassword)) {
             throw new InvalidCredentialsException();
         }
+        if (user.isTwoFactorEnabled()) {
+            return LoginResult.twoFactorRequired(twoFactorService.startChallenge(user));
+        }
+        return LoginResult.authenticated(issueTokens(user));
+    }
+
+    /**
+     * Completes a 2FA login: resolves the pending challenge, verifies a TOTP or backup code, then
+     * consumes the challenge (single-use) and issues tokens. The challenge survives a wrong code so
+     * the user can retry within its TTL.
+     */
+    public AuthTokens twoFactorLogin(String challenge, String code) {
+        UUID userId = twoFactorService.peekChallenge(challenge)
+                .orElseThrow(InvalidTwoFactorCodeException::new);
+        User user = userService.getById(userId);
+        if (!twoFactorService.verifyCode(user, code)) {
+            throw new InvalidTwoFactorCodeException();
+        }
+        twoFactorService.consumeChallenge(challenge);
         return issueTokens(user);
     }
 
