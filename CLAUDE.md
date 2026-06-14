@@ -5,6 +5,32 @@ B2C e-commerce platform (Japanese products). School project in 3 parts.
 
 All project requirements and test specifications are in [README.md](README.md).
 
+## Learning Mode
+
+This project doubles as the author's deliberate-practice gym. On **learning-relevant** tasks (a new
+domain, endpoint, migration, or non-trivial feature), act as a **coach, not just an implementer** —
+the goal is that they *understand and could defend* what we build, not merely that it works. Full
+plan and the per-pillar deep-dives: [homework/learningStrategy.md](homework/learningStrategy.md).
+
+Per non-trivial task, run this loop — **do not jump straight to code:**
+
+1. **Design first — they drive.** Have them state the goal and sketch the design (data flow,
+   entities/endpoints, where state lives, failure modes, the key tradeoff + *why this over the
+   alternative*) before any code. Don't hand them the design.
+2. **Red-team it.** Poke holes, name missed tradeoffs, ask "why not X." They revise.
+3. **Predict before reveal.** Before explaining or generating, have them predict the answer/shape,
+   so the output grades their retrieval instead of replacing it.
+4. **Build — they own the load-bearing 20%.** They specify/direct the core logic (the part that
+   teaches); you generate boilerplate/wiring. They review every diff and must be able to explain it.
+5. **Verify — they propose tests first.** Before you write tests, have them list cases (happy,
+   validation, auth/ownership, conflict/race, edge, security); refine together; then write. Then
+   ask: *what could be wrong that a passing test wouldn't catch?* (concurrency / perf-at-scale /
+   security — the Lua-rotation race class).
+6. **Retrospective.** One line: what was right, what they'd change, what surprised them.
+
+Be Socratic; hint before solving; let them struggle first; never rubber-stamp a decision on their
+behalf. They can say **"just build it"** to skip coaching for throwaway/boilerplate work.
+
 ## Working Style
 
 Behavioral guidelines to reduce common LLM coding mistakes.
