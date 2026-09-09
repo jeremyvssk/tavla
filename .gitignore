@@ -1,14 +1,25 @@
-.claude
-claude-docs
-homework
-
-# Env
+# Secrets — .env is generated from .env.example by ./start.sh
 .env
 
-# Build artifacts (added as backend/frontend appear)
+# Machine-local Claude Code state (skills and shared settings ARE committed)
+.claude/settings.local.json
+
+# Build artifacts
 target/
 node_modules/
 dist/
+*.tsbuildinfo
+
+# IDE
 .idea/
 .vscode/
 *.iml
+
+# Vendored frontend-design skills (emilkowalski/skills, MIT). Kept locally, not committed:
+# generic tooling, no project specificity, and 85% of the skills payload by line count.
+# Re-vendor at Project 3 — provenance and the rejected list are in .claude/skills/README.md.
+.claude/skills/animate/
+.claude/skills/emil-design-eng/
+.claude/skills/pick-ui-library/
+.claude/skills/prototype/
+.claude/skills/VENDOR-LICENSE.md

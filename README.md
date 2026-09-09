@@ -1,230 +1,396 @@
-i-love-shopping (1/3)
-The situation 👀
+# i-love-shopping
 
-"Give me your credit card number, expiry date and that little code on the back and I'll send you this thing you see on the picture" - In the early 90s that sounded like a plot of a bad movie. Fast forward to today and we're talking about $6.88 trillion industry, projected to reach $8.03 trillion by 2027.
-E-commerce is reshaping entire economies and creating job markets that didn't exist a decade ago. From Pizza Hut's first online order back in 1994 to today's one-click purchases and next day deliveries, we've come a long way.
+A B2C e-commerce platform for Japanese homeware — ceramics, stationery, kitchenware and tea,
+sourced from small makers.
 
-Online retail seems to be booming and Jeff managed to make a few bucks out of it, so why don't you give it a go?
-Functional requirements 📋
+Built in three projects. **This repository is Project 1 (Foundation):** secure user accounts, a
+relational database designed for growth, and the product catalog that Projects 2 (Commerce) and
+3 (Experience) build on. The assignment brief is kept verbatim at
+[docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
 
-You'll have to build a Business-to-Consumer (B2C) E-commerce Platform. You're free to choose a category of featured products as long as they meet the criteria outlined below.
-Some examples to get your started:
+> **Status — read this first.** Authentication is complete and tested end to end. The catalog
+> domain and the customer-facing UI are in progress. See [Project status](#project-status) for the
+> honest line-by-line breakdown before reviewing.
 
-    Electronics and Technology
-    Pet Supplies
-    Home and Furniture
-    Books and Media
+---
 
-The build of the e-commerce platform is broken down into 3 interconnected projects:
+## Quick start
 
-    Project 1 (Foundation) - Core system that powers everything. Secure user accounts, a well-structured database, and a product catalog that customers can easily search and browse.
-    Project 2 (Commerce) - Shopping experience. Let users fill their carts, guide them through checkout, handle payments safely, and manage their orders from start to finish.
-    Project 3 (Experience) - Complete user interface and management tools. Build all customer-facing pages, create admin dashboards for managing the business, and add the security and performance features needed for real-world use.
+Docker is the only prerequisite.
 
-Rome wasn't built in a day. Have the whole picture in mind, but focus on placing each stone with precision.
-User Registration, Authentication and Authorization
+```sh
+git clone <this-repo> && cd i-love-shopping1
+./start.sh
+```
 
-User management is the backbone of your platform's security and user experience. There's a good chance that everyone has abandoned a site because of an uncomfortable registration procedure or poorly implemented security measures. Think about times when you've felt uneasy about how a site handles your personal information - that's what we're trying to avoid here.
-You want tight security, but not so tight that users feel like they're cracking a safe just to buy socks. And take care not to end up on the list of "oopsies" (Aadhaar, Yahoo, LinkedIn)
+That builds and starts all five containers. First run takes a few minutes (Maven and Bun both
+resolve dependencies); subsequent runs are cached.
 
-    Registration and login should be handled through email-password and OAuth (e.g., Google, Facebook).
-    Add CAPTCHA (e.g., Google reCAPTCHA) during registration.
-    JWT with access and refresh tokens.
-        Access token is used for authenticating API requests, Refresh token is used to obtain new access token when it has expired.
-        Short lived access tokens (15-60 minutes), longer-lived refresh tokens (3-7 days).
-        Access tokens must be stored in memory, not in local or session storage.
-        Refresh token rotation with each token refresh (single use validation).
-        Token revocation mechanism for both.
-    Include password recovery and reset via email.
-    Implement an optional, user enabled two-factor authentication (e.g., Google Authenticator, Authy).
-    Validate user inputs and show helpful error messages when things go wrong.
+| | URL |
+|---|---|
+| App | <http://localhost:5173> |
+| API | <http://localhost:8080> |
+| MailHog (catches all outbound dev email) | <http://localhost:8025> |
+| Postgres | `localhost:5432` |
+| Redis | `localhost:6379` |
 
-Database
+```sh
+./start.sh down     # stop
+./start.sh reset    # stop and delete volumes (wipes the database)
+docker compose logs -f backend
+```
 
-When choosing which Database to go with, consider the following points:
+`docker-compose.yml` carries a working development default for every variable, so a bare
+`docker compose up --build` works too. `./start.sh` additionally writes a `.env` from
+`.env.example` to give you one place to edit. `.env` is gitignored and holds no real secrets in
+development.
 
-    Data Structure and Complexity: e-commerce typically involves structured data and relational databases are better suited for handling complex relationships and transactions.
-    Your project is already big, and it will grow bigger - plan for it.
-    Expect your platform to get rapid, heavy traffic during peak promotions and holiday shopping: evaluate read-write operations and features like caching to optimize for performance.
+---
 
-Above all, your database must follow ACID properties:
+## Usage guide
 
-    Atomicity - critical processes involving multiple steps must all succeed or fail together.
-    Consistency - maintain data integrity after transactions, bringing database from one valid state to another.
-    Isolation - concurrent executions leave the database in the same state as if they were executed sequentially.
-    Durability - if transaction is commited, it will remain commited even in case of system failure.
+A walkthrough of everything currently working. All of it can be driven from `curl`; the API is
+also reachable through the app origin at `http://localhost:5173` (see [Request flow](#request-flow)).
 
-To better visualize the big picture and identify requirements, design an Entity Relationship Diagram (ERD). The key components of ERD typically include:
+### Register and log in
 
-    Entities
-    Attributes
-    Relationships
-    Primary Keys
-    Foreign Keys
-    Cardinality
-    Modality
+```sh
+curl -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"correct horse battery staple","fullName":"Your Name"}'
 
-Product Catalog
+curl -i -X POST http://localhost:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"correct horse battery staple"}'
+```
 
-A solid product catalog is like a well-organized shop where everything's easy to find and looks great on the shelf. What's under the hood? Data structure that would make Marie Kondo proud.
-A good catalog doesn't just list products; it guides your customers on a shopping journey. So when you're setting this up, think like a shopper. What would make you click 'Add to Cart' instead of 'Back to Google'?
+The login response body carries the **access token**. The **refresh token** comes back as an
+`httpOnly; Secure; SameSite=Strict; Path=/auth` cookie — it is never readable by JavaScript.
 
-    Product should have at least the following data models:
-    id, name, description, price, stock quantity, category, brand, images, weight/dimensions (metric and imperial)
-    Organize products into categories and make them easy to browse.
-    Implement faceted search, allowing users to refine results by multiple attributes (e.g., price range, brand, ratings, etc).
-    Display dynamic search suggestions as users type, based on their input.
-    Offer sorting options like relevance, price, and ratings to better help users find what they want.
+### Refresh rotation (single-use)
 
-Testing
+```sh
+curl -i -X POST http://localhost:8080/auth/refresh -b 'refresh_token=<the cookie value>'
+```
 
-A thousand tests today save a million headaches tomorrow.
+Every refresh issues a **new** refresh token and destroys the old one. Replay the same cookie a
+second time and it is rejected — the Redis key is already gone. This is the behaviour to test at
+review; see [Security design](#security-design) for why it is done with a Lua script.
 
-Invest your time in creating a comprehensive testing suite that will help you catch bugs early and follow test-driven development practices.
-Below are outlined minimum required tests but you're welcome to be as thorough as you'd like.
-Automated Tests
+### Password reset via email
 
-While you're not required to implement CI/CD pipeline (yet), these tests should be automated and run frequently, ideally before any bugs make their way to your master code repository.
+`POST /auth/forgot-password` with an email address, then open **MailHog at
+<http://localhost:8025>** to read the message and follow the reset link. Completing a reset
+revokes every refresh token that user holds.
 
-    Unit Tests
-        JWT Token Handling - test token generation, validation, and expiration.
-        User Input Validation - verify proper handling of various input scenarios.
-        Product Data Model - verify correct data structure and validation.
+### Two-factor authentication
 
-    API Integration Tests
-        API Endpoints - validate correct responses and error handling for all endpoints.
-        Database Operations - ensure proper data persistence and retrieval.
+`POST /auth/2fa/setup` (authenticated) returns an `otpauth://` URI — render it as a QR code or
+paste it into Google Authenticator / Authy. `POST /auth/2fa/enable` with a code from the app turns
+it on and returns eight single-use backup codes. From then on `POST /auth/login` returns a
+challenge instead of tokens, and real tokens are only issued by `POST /auth/2fa/login`.
 
-    Security Tests
-        Input Validation - test protection against injection attacks and malformed inputs.
+### CAPTCHA
 
-Test hard and test smart. Use up-to-date, reputable testing frameworks and libraries to enhance the quality and efficiency.
-Manual Tests
+Off by default so review does not depend on Google keys. Set `RECAPTCHA_ENABLED=true` plus
+`RECAPTCHA_SITE_KEY` / `RECAPTCHA_SECRET_KEY` in `.env` to require a verified reCAPTCHA token on
+registration.
 
-Automated tests are great but special care must be taken to ensure that security-critical parts of your platform are protected from vulnerabilities seeking bots. Following tests should be run periodically to ensure they serve their purpose as intended.
+### Google OAuth
 
-    CAPTCHA Verification - ensure proper integration and user experience.
-    OAuth Integration - verify seamless third-party authentication flows.
-    Two-Factor Authentication (2FA) - test setup process and login flow with 2FA enabled.
+Set `GOOGLE_CLIENT_ID` in `.env`, then `POST /auth/oauth/google` with a Google ID token. An email
+already registered with a password cannot be silently taken over by the OAuth flow — it returns a
+409 rather than merging the accounts.
 
-Important Considerations ❗
+---
 
-    Scalable Architecture - design the system with scalability in mind from the start. Choose an architectural approach that fits your project goals - whether that's a traditional monolith, modular monolith, or microservices architecture.
-    Robust Security Measures - implement comprehensive security practices throughout the development process.
-    Performance Optimization - focus on optimizing performance from the beginning. This includes efficient database queries, caching strategies, and front-end optimizations.
-    Flexible Product Management - design a product catalog system that can easily accommodate various product types, attributes, and categories.
-    API-First Approach - develop with an API-first mindset. Well-designed, documented, and versioned APIs will facilitate easier integration with future services, mobile applications, or third-party systems.
-    Compliance and Regulatory Awareness - stay informed about e-commerce regulations and data protection laws, like GDPR.
+## API reference
 
-Useful links 🔗
+All request bodies are JSON and validated at the boundary; failures return `400` with a per-field
+error map. Unknown fields are rejected outright (mass-assignment guard).
 
-    The Twelve-Factor App
-    E-commerce Design
-    Docker
+### Public
 
-Dockerization
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/auth/register` | Create an account. Optional CAPTCHA token. |
+| `POST` | `/auth/login` | Email + password. Returns tokens, or a 2FA challenge. |
+| `POST` | `/auth/2fa/login` | Exchange a 2FA challenge + TOTP code for tokens. |
+| `POST` | `/auth/oauth/google` | Exchange a Google ID token for tokens. |
+| `POST` | `/auth/refresh` | Rotate the refresh cookie, get a new access token. |
+| `POST` | `/auth/forgot-password` | Send a reset email. Always `204`, so it cannot be used to enumerate accounts. |
+| `POST` | `/auth/reset-password` | Consume a reset token, set a new password, revoke all sessions. |
+
+### Authenticated (`Authorization: Bearer <access token>`)
 
-    Containerize the project: use Docker to simplify setup and execution:
-        Provide a Dockerfile (or multiple, if the project includes separate frontend and backend components)
-        Include a simple startup command or script that builds and runs the entire application with one step
-        Docker is the only prerequisites for running and reviewing this project, with all application dependencies included in the Docker setup
-
-What you'll learn 🧠
-
-    Develop a full-scale B2C e-commerce platform, covering all essential components from user management to order processing
-    Design and build a scalable database structure with ACID properties, suitable for handling complex e-commerce data relationships
-    Implement industry-standard security practices and data protection measures for a robust and trustworthy online retail environment
-    Create a responsive and accessible user interface that adheres to modern UI/UX principles and WCAG 2.1 Level A criteria
-    Apply best practices in software testing, including automated and manual testing strategies, to ensure platform reliability and performance
-
-Deliverables and Review Requirements 📁
-
-    All source code and configuration files
-    A README file with:
-        Project overview
-        Entity Relationship Diagram
-        Setup and installation instructions
-        Usage guide
-        Any additional features or bonus functionality implemented
-
-During the review, be prepared to:
-
-    Demonstrate your platforms's functionality
-    Explain your code and design choices
-    Discuss any challenges you faced and how you overcame them
-
-
-Testing
-
-Ensures that software works as expected by validating features against requirements. It helps catch bugs early, improves reliability, and maintains high-quality standards in development.
-
-How to do testing?
-
-    1. Clone the repository, then build and run the submitted code.
-    2. Agree on your teamwork: how do you divide testing between reviewers?
-    3. Test functionality and check compliance with the requirements.
-    4. Provide feedback in the group chat and request fixes if necessary.
-    5. Clearly state what changes are mandatory and what are optional fixes.
-    6. Repeat the testing cycle after submitters make the requested changes for as many times as is needed.
-
-Mandatory
-
-The README file contains a clear project overview, entity relationship diagram, setup instructions, and usage guide
-
-The platform implements a Business-to-Consumer (B2C) e-commerce model.
-
-The system implements both email-password and OAuth authentication methods.
-
-CAPTCHA is integrated into the registration process.
-
-Student can explain the concept of JWT and its components (header, payload, signature).
-
-Access tokens are stored in memory.
-
-Refresh token rotation is implemented with single-use validation.
-
-Verify that each refresh token can only be used once and new refresh token is issued with each refresh. Old refresh tokens must be rejected.
-
-Token revocation mechanism is in place for both access and refresh tokens.
-
-Password recovery and reset functionality via email is implemented.
-
-Two-factor authentication (2FA) is available as an optional, user-enabled feature.
-
-User input validation is implemented on both client and server sides for authentication forms.
-
-Student can explain the chosen database's scalability features and how they support potential growth of the e-commerce platform.
-
-Student can explain ACID properties and their importance in e-commerce database design.
-
-An Entity Relationship Diagram (ERD) is provided, clearly showing entities, attributes, relationships, primary keys, foreign keys, cardinality, and modality.
-
-Student can demonstrate and explain the search implementation including database design and basic text search functionality.
-
-The product data model includes all required fields: id, name, description, price, stock quantity, category, brand, images, and weight/dimensions (in both metric and imperial units).
-
-Products are organized into categories with an intuitive browsing structure.
-
-Faceted search is implemented, allowing users to refine results by product attributes (e.g., price range, brand, category).
-
-Product listing includes sorting options for relevance, price and rating.
-
-Product images are stored with proper file handling and basic serving functionality.
-
-Student can explain their approach to testing, integration of automated and usage of manual tests throughout the development process.
-
-Automated tests exist for Unit, API integration, and Security tests covering authentication and product catalog functionality.
-
-Ask the student to explain and demonstrate the functionality of the tests.
-
-Student can explain their chosen architectural approach and justify how it aligns with their platform's scalability requirements.
-
-Authentication system implementation quality, security measures, and user experience.
-
-Database design quality, ERD completeness, and adherence to ACID properties.
-
-Product catalog organization, search functionality, and filtering system implementation.
-
-Project application is containerized using Docker.
-
-The project uses Docker to containerize the application and its dependencies. Docker is the only host prerequisite - all other dependencies are managed within containers.
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/auth/logout` | Blocklist the access token's JTI, destroy the refresh token. |
+| `POST` | `/auth/2fa/setup` | Get an `otpauth://` provisioning URI. |
+| `POST` | `/auth/2fa/enable` | Verify a TOTP code, enable 2FA, return backup codes. |
+| `POST` | `/auth/2fa/disable` | Verify a TOTP code, disable 2FA. |
+
+Errors are shaped consistently by a single `@RestControllerAdvice`:
+
+```json
+{ "error": "validation_failed", "fields": { "email": "must be a well-formed email address" } }
+```
+
+Stack traces, SQL and internal paths never reach a response body.
+
+---
+
+## Database
+
+PostgreSQL 16. The full diagram:
+
+![Entity relationship diagram](docs/i-love-shopping-erd.png)
+
+Schema is owned by Flyway migrations in `backend/src/main/resources/db/migration/`, applied
+automatically on startup. Migrations are append-only — a committed `V*.sql` is never edited.
+
+### Entities
+
+| Table | Key | Notes |
+|---|---|---|
+| `users` | `UUID` | Unique email, BCrypt hash, `LOCAL`/`GOOGLE`/`FACEBOOK` provider, role, 2FA secret + backup codes |
+| `categories` | `INTEGER` | Self-referencing `parent_id` for an arbitrary-depth tree |
+| `brands` | `INTEGER` | Name, unique slug, logo |
+| `products` | `UUID` | Price `DECIMAL(10,2)`, stock, category, brand, `JSONB` attributes, both metric and imperial weight/dimensions, generated `tsvector`, denormalised rating |
+| `product_images` | `INTEGER` | Ordered, one flagged `is_primary` |
+| `product_reviews` | `UUID` | Rating `CHECK BETWEEN 1 AND 5`, one review per user per product |
+
+### Design decisions worth asking about
+
+- **Three different FK delete rules, deliberately.** `products.category_id` is `RESTRICT` — a
+  category with products in it must not vanish. `products.brand_id` is `SET NULL` — losing a brand
+  should orphan the product, not delete it. `product_images` and `product_reviews` are `CASCADE` —
+  they have no meaning without their product.
+- **`search_vector` is `GENERATED ALWAYS ... STORED`,** so Postgres maintains it on write rather
+  than recomputing `to_tsvector` on every query. Costs disk, saves per-query CPU.
+- **`average_rating` and `review_count` are denormalised onto `products`** so that sorting the
+  catalog by rating is an index scan, not an aggregate over `product_reviews`.
+- **A partial unique index** (`uq_categories_root_name WHERE parent_id IS NULL`) enforces unique
+  names among root categories while still allowing the same subcategory name under two parents.
+- **Constraints live in the database, not only in DTOs.** Every `@NotBlank` has a `NOT NULL`, every
+  `@Size(max=N)` a `VARCHAR(N)`, every range a `CHECK`. Application checks are hopes; database
+  constraints are facts.
+
+### ACID
+
+Postgres gives all four out of the box, and the design leans on them: **atomicity** so a
+multi-statement operation such as "reset password and revoke every session" cannot half-apply;
+**consistency** through the FK, `CHECK` and `UNIQUE` constraints above; **isolation** so two
+concurrent registrations of the same email cannot both succeed — the `UNIQUE` index makes one of
+them fail, and the service catches `DataIntegrityViolationException` to turn it into a clean `409`
+instead of a race; **durability** through the WAL, so a committed order survives a crash.
+
+### Scaling path
+
+Read replicas for catalog reads, connection pooling (HikariCP, already in use), partitioning
+`product_reviews` by product once it is large, and `JSONB` for per-category attributes so new
+product types do not need a migration. Redis already absorbs the hot, short-lived, high-churn
+data that would otherwise hammer Postgres. `SearchService` is an interface with a Postgres
+implementation so search can move to Elasticsearch in Project 3 without touching its callers.
+
+---
+
+## Architecture
+
+**Modular monolith.** One Spring Boot application, split by *domain* rather than by layer:
+
+```
+com.iloveshopping/
+├── user/       User, UserRepository, UserService
+├── auth/       JWT, refresh rotation, 2FA, CAPTCHA, OAuth, password reset
+├── catalog/    products, categories, brands, search   (in progress)
+├── config/     SecurityConfig, PasswordConfig, RestClientConfig, GoogleOAuthConfig
+└── exception/  GlobalExceptionHandler, ErrorResponse
+```
+
+Each domain owns its own controller, service, repository, entity and exceptions. Cross-domain
+access goes through service interfaces — never repository to repository.
+
+**Why not microservices:** at this size they would add network calls, distributed transactions and
+deployment overhead to buy independent scaling nobody needs yet. The domain boundaries here are
+real, so if one domain ever does need to be extracted, the seam is already cut. **Why not a plain
+layered monolith:** a `controllers/ services/ repositories/` split makes every feature a change in
+three packages and lets domains reach into each other's data unnoticed.
+
+**Stateless processes.** No `HttpSession`, no in-memory user state, no static maps. Every
+session-like thing lives in Redis, so any instance can serve any request and the app scales
+horizontally.
+
+### Request flow
+
+```
+browser :5173  ──►  nginx (frontend container)
+                      │
+                      ├─ /                    SPA bundle, with a try_files fallback
+                      ├─ /images/…            product images off the shared volume
+                      └─ /auth/… /products/…  proxied to backend:8080
+                                                   │
+                                    ┌──────────────┼──────────────┐
+                                 postgres        redis         mailhog
+```
+
+nginx serves the app *and* proxies the API, so the browser only ever talks to one origin. That
+means **no CORS anywhere in the stack** and no cross-origin credential sharing to get wrong. The
+proxy passes paths through verbatim rather than rewriting them under an `/api` prefix, because the
+refresh cookie is scoped `Path=/auth` and a rewritten prefix would stop the browser from ever
+sending it back. Port `8080` stays published so the API can also be driven directly with `curl`.
+
+### Storage map
+
+| Store | Holds |
+|---|---|
+| Postgres | Durable user, product, category, brand, image and review data |
+| Redis | Refresh tokens, the access-token JTI blocklist, pending 2FA challenges, password-reset tokens — all TTL'd |
+| Docker volume `product_images_data` | Image bytes, written by the backend, served by nginx. An S3 `StorageService` implementation replaces this for production. |
+
+---
+
+## Security design
+
+- **Access token: in memory only.** A JavaScript module variable, never `localStorage` or
+  `sessionStorage`, so an XSS payload cannot read it out of storage. On page reload the app calls
+  `/auth/refresh` to rehydrate. Short-lived (15 minutes by default, `JWT_ACCESS_TTL`).
+- **Refresh token: `httpOnly` cookie,** scoped `Path=/auth`, `SameSite=Strict`, `Secure`. Not
+  reachable from JavaScript at all. Seven-day TTL (`JWT_REFRESH_TTL`).
+- **Rotation is atomic.** `TokenStoreService` swaps the old token for a new one inside a **Redis
+  Lua script**, so read-old / delete-old / write-new is one indivisible operation. Done as three
+  separate Redis calls, two requests arriving a few milliseconds apart could both validate the same
+  token and both get fresh ones. Under the Lua script, the second one finds the key gone and is
+  rejected.
+- **Revocation for both token types.** Logout writes the access token's `jti` to a Redis blocklist
+  with a TTL equal to the token's remaining lifetime, and `JwtAuthenticationFilter` checks it on
+  every request. The refresh token is deleted outright.
+- **Password reset revokes everything.** Every refresh token for that user is destroyed, via the
+  `refresh_tokens_user:{userId}` set — so a reset actually locks an attacker out.
+- **No PII in the JWT.** Payload is `sub`, `role`, `iat`, `exp`, `jti`. No email, no name.
+- **Identity is not authorisation.** A valid JWT proves who you are; the service and database still
+  check that the resource being touched belongs to that `sub`.
+- **Passwords are NFC-normalised before BCrypt**, on both register and login, so accented
+  characters are never silently rejected or mismatched.
+- **CSRF is disabled deliberately, not carelessly.** State-changing requests carry a `Bearer`
+  header, which browsers do not attach automatically, and the one cookie in play is
+  `SameSite=Strict` and scoped to `/auth`.
+- **Every secret is an environment variable.** No secret is committed; `.env.example` holds names
+  and placeholders only.
+
+---
+
+## Testing
+
+```sh
+cd backend && mvn verify     # unit + integration; Testcontainers needs Docker running
+cd frontend && bun test
+```
+
+Integration tests run against **real Postgres and Redis in Testcontainers**, never H2 — H2 lies
+about the Postgres-specific features this schema depends on (`JSONB`, `tsvector`, generated
+columns).
+
+| Kind | Covers |
+|---|---|
+| Unit | `JwtServiceTest` (generation, validation, expiry), `TokenStoreServiceTest` (rotation, single-use), `TwoFactorServiceTest`, `PasswordResetServiceTest`, `CaptchaServiceTest`, `GoogleTokenVerifierTest`, `UserServiceTest` |
+| Integration | `AuthControllerIT`, `PasswordResetControllerIT`, `TwoFactorControllerIT` — full Spring context over MockMvc, covering `400`/`401`/`403`/`409` paths, not just happy paths |
+| Manual | CAPTCHA, Google OAuth and the 2FA enrolment flow, per the brief |
+
+Gaps are listed honestly under [Project status](#project-status).
+
+---
+
+## Project status
+
+What a reviewer can and cannot exercise today.
+
+**Working and tested**
+
+- Email + password registration and login, with server-side validation
+- Google OAuth login
+- reCAPTCHA on registration (opt-in via env)
+- JWT access tokens in memory, refresh tokens as `httpOnly` cookies
+- Single-use refresh rotation, atomic in Redis
+- Revocation of both token types
+- Password recovery and reset by email, through MailHog
+- Optional user-enabled 2FA with TOTP and backup codes
+- Full schema and ERD for every Project 1 entity
+- Unit + API integration test suites for all of the above
+- One-command Docker startup
+
+**Not built yet**
+
+- **Catalog domain** — the tables exist; the entities, repositories, services, controllers and
+  their tests do not. No product browsing, no category tree endpoint.
+- **Search** — no `SearchService` implementation, so no faceted search, no autocomplete, no
+  relevance/price/rating sorting. The generated `tsvector` column is in place; the GIN index and
+  `pg_trgm` autocomplete index are still to be added as a migration.
+- **Product image upload and serving** — nginx is configured to serve `/images/`, but nothing
+  writes to the volume yet.
+- **Frontend** — the landing page renders. No auth screens, no Redux store, no Axios interceptor,
+  no React Query wiring, no catalog UI, and no frontend tests.
+- **Security test suite** — `InputValidationTest` (injection probes, oversized payloads, deep JSON,
+  path traversal, mass assignment) is specified but not written.
+- **Seed data** — the catalog is empty, so there is nothing to browse even once the endpoints land.
+
+Planned order of work is in [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md).
+
+---
+
+## Configuration
+
+Every value is an environment variable, per [12-factor](https://12factor.net). Defaults in
+`docker-compose.yml` are development-only.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `iloveshopping` / `app` / `changeme` | Database credentials |
+| `DATABASE_URL` | `jdbc:postgresql://postgres:5432/iloveshopping` | JDBC URL; host is the compose service name |
+| `REDIS_URL` | `redis://redis:6379` | Token store |
+| `JWT_SECRET` | dev placeholder | Signing key. **Must be replaced outside development.** |
+| `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` | `PT15M` / `P7D` | Token lifetimes (ISO-8601 durations) |
+| `SMTP_HOST` / `SMTP_PORT` / `MAIL_FROM` | `mailhog` / `1025` / `noreply@iloveshopping.local` | Outbound mail |
+| `FRONTEND_RESET_URL` | `http://localhost:5173/reset` | Base of the link in reset emails |
+| `GOOGLE_CLIENT_ID` | empty | Google OAuth; the flow is inert until set |
+| `RECAPTCHA_ENABLED` / `RECAPTCHA_SITE_KEY` / `RECAPTCHA_SECRET_KEY` | `false` / empty / empty | CAPTCHA on registration |
+| `TWO_FACTOR_ISSUER` | `i-love-shopping` | Label shown in authenticator apps |
+| `FRONTEND_PORT` / `BACKEND_PORT` | `5173` / `8080` | Published host ports |
+
+A missing required variable fails the application at boot rather than at first use. That is
+intentional.
+
+---
+
+## Troubleshooting
+
+**Ports already in use.** Set `FRONTEND_PORT`, `BACKEND_PORT`, `POSTGRES_PORT` or `REDIS_PORT` in
+`.env` and restart.
+
+**Backend exits on startup.** Almost always Flyway hitting a database left over from an older
+schema. `./start.sh reset` drops the volumes and starts clean.
+
+**No reset email arrives.** Nothing leaves the machine in development — every message is captured
+by MailHog at <http://localhost:8025>.
+
+**Reach the app at `localhost`, not a LAN IP.** The refresh cookie is marked `Secure`, and browsers
+only allow that over plain HTTP for `localhost`.
+
+**`mvn verify` fails to start containers.** Testcontainers needs a running Docker daemon and the
+current user in the `docker` group.
+
+---
+
+## Repository layout
+
+```
+├── start.sh                one-command startup
+├── docker-compose.yml      postgres, redis, mailhog, backend, frontend
+├── .env.example            every variable, with placeholders
+├── backend/                Spring Boot 4 · Java 21
+│   └── src/main/resources/db/migration/   Flyway migrations
+├── frontend/               React 18 · TypeScript · Vite · Bun
+│   └── nginx.conf          SPA fallback, API proxy, image serving
+├── docs/                   ERD, assignment brief
+└── claude-docs/            design and build notes
+```

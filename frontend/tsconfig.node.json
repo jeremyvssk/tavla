@@ -1,6 +1,10 @@
 {
   "compilerOptions": {
     "composite": true,
+    // A referenced composite project cannot disable emit (TS6310), so send its output
+    // out of the source tree instead — otherwise `tsc -b` litters vite.config.js/.d.ts.
+    "outDir": "./node_modules/.tmp/node",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,

@@ -3,7 +3,9 @@
 B2C e-commerce platform (Japanese products). School project in 3 parts.
 **Current scope: Project 1** — auth, database, product catalog.
 
-All project requirements and test specifications are in [README.md](README.md).
+The assignment brief and its review checklist are in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
+[README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
+**Project status** section honest; a README claiming unbuilt features is worse than no README.
 
 ## Learning Mode
 
@@ -33,92 +35,26 @@ behalf. They can say **"just build it"** to skip coaching for throwaway/boilerpl
 
 ## Working Style
 
-Behavioral guidelines to reduce common LLM coding mistakes.
+The general rules — simplicity, finish what was asked, don't widen scope, ask when two readings
+lead to materially different work — are assumed. These are the ones specific to this repo, or
+easy to get wrong.
 
-Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+**Surgical changes.** Touch only what the request requires. Don't refactor working code, reformat,
+or "improve" adjacent comments. If you notice unrelated dead code, *mention* it — don't delete it.
+Remove imports and variables that **your** change orphaned; leave pre-existing dead code alone.
+The test: every changed line traces to the request.
 
-### 1. Think Before Coding
+**No emojis in code.**
 
-Don't assume. Don't hide confusion. Surface tradeoffs.
+**File headers.** Every `.tsx`/`.jsx` and `.java` file opens with a one-line comment saying what
+that file does.
 
-Before implementing:
+**Comments.** Worth writing for non-obvious logic, domain rules, and "X instead of Y because Z".
+Not worth writing for what the code already says through naming.
 
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-
-Minimum code that solves the problem. Nothing speculative.
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-
-Touch only what you must. Clean up only your own mess.
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-- Don't add emojis to code
-
-.
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-Define success criteria. Loop until verified.
-
-Transform tasks into verifiable goals:
-
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
-These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-### 5. Comments
-
-One good comment beats five obvious ones. When in doubt, leave it out.
-
-Add when:
-
-- Non-obvious logic (algorithms, regex, bit ops, domain rules)
-- Function/module docstrings — *what* and *why*, not *how*
-- Workarounds or unusual decisions ("X instead of Y because Z")
-
-Skip when:
-
-- The code already says it through good naming
-- Trivial operations (`i++`, simple assignments, obvious conditionals)
-
-Every React (`.tsx`/`.jsx`) and Java (`.java`) file starts with a one-line comment on the first line stating what the file does.
+**Verifiable goals.** State a multi-step task as steps with a check each — "add validation →
+write tests for invalid input, watch them fail, then pass". Strong checks let you loop without
+coming back to ask whether it worked.
 
 ## Stack
 
@@ -128,7 +64,7 @@ Every React (`.tsx`/`.jsx`) and Java (`.java`) file starts with a one-line comme
 | Frontend state | Redux Toolkit (auth) + React Query (server data) |
 | Routing | React Router v6 |
 | HTTP | Axios with interceptors (access token stored in memory var) |
-| Backend | Spring Boot 3.2, Java 21 |
+| Backend | Spring Boot 4.0.6, Java 21 (**Boot 4, not 3** — see [backend/CLAUDE.md](backend/CLAUDE.md)) |
 | ORM + migrations | Spring Data JPA + Flyway (plain SQL files, run on startup) |
 | Database | PostgreSQL 16 (ACID, JSONB, built-in full-text search) |
 | Token store | Redis 7 (refresh tokens, access token blocklist) |
@@ -148,6 +84,40 @@ Domains (P1): `user`, `auth`, `catalog`
 ## Folder Structure
 
 See [claude-docs/FOLDER_STRUCTURE.md](claude-docs/FOLDER_STRUCTURE.md)
+
+## Skills
+
+Skills hold detail that shouldn't sit in always-loaded context. Load one *before* starting the
+work it covers, not after getting stuck. Inventory and provenance: [.claude/skills/README.md](.claude/skills/README.md).
+
+**Project skills** — load these by default for the matching work:
+
+| Work | Skill |
+|---|---|
+| Any controller, DTO, or request-validation change under `backend/` | `new-endpoint` |
+| Writing, planning, or judging the adequacy of any test | `verify` |
+| Any change under `db/migration/` | `flyway-migration` |
+
+**Frontend design skills** (vendored from [emilkowalski/skills](https://github.com/emilkowalski/skills), MIT):
+
+| Work | Skill |
+|---|---|
+| Choosing a frontend library (toasts, dropdowns, charts, drag & drop…) | `/pick-ui-library` — explicit invoke only |
+| Exploring several UI directions before committing | `/prototype` — explicit invoke only |
+| Building an animation or transition | `/animate` — explicit invoke only |
+| General UI polish and component-design judgment | `/emil-design-eng` — explicit invoke only |
+
+All four are explicit-invoke only — none can trigger themselves — and all four are gitignored,
+so they live on this machine and not in the repo. Project 3 is where they earn their keep; the P1
+frontend steps (BUILD_ORDER #13-15) are forms, routing and validation, so build those plainly.
+
+**Built-ins — don't build project skills that duplicate these:** `/code-review` (correctness
+bugs), `/simplify` (reuse and over-complication), `/security-review` (vulnerabilities in the
+current diff).
+
+Adding a skill has a real cost: its description line sits in context permanently and can
+mis-trigger. Add one only when a checklist is being repeated across sessions, and prefer moving
+existing always-loaded text into it over writing something new.
 
 When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md) — backend-specific operating rules (validation, auth, persistence, 12-factor).
 
@@ -185,16 +155,15 @@ Served via nginx at `/images/**`. Not suitable for production scale — use S3 l
 
 ## Security Rules
 
+The server-side invariants are in [backend/CLAUDE.md](backend/CLAUDE.md) §6 — rotation atomicity,
+revoke-all on reset, the 2FA challenge key, no PII in the payload — and they load with any backend
+work. These are the ones that live outside that file:
+
 - Access token: JS module variable only. Never localStorage/sessionStorage.
   On page reload → call `/auth/refresh` on mount to rehydrate.
-- Refresh rotation: Redis Lua script to atomically swap tokens.
-  Old token replayed = key gone = rejected.
-- Password reset: revokes ALL refresh tokens for that user (iterate `refresh_tokens_user` set).
-- 2FA: partial session via Redis challenge key after password OK, full JWT only after TOTP.
-  TwoFactorService returns `otpauth://` URI for QR code generation.
-  Generate 8 backup codes on 2FA setup, store hashed.
-- Token revocation: logout writes JTI to blocklist, filter checks on every request.
-- GDPR: UserService must support hard delete (cascade) and data export endpoint.
+- 2FA setup returns an `otpauth://` URI for the client to render as a QR code. The 8 backup codes
+  are shown once and never again.
+- GDPR: UserService must support hard delete (cascade) and a data export endpoint.
 
 ## Build Order (P1)
 
