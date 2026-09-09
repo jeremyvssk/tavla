@@ -58,9 +58,13 @@ app:
     from: ${MAIL_FROM:noreply@iloveshopping.local}
   frontend:
     reset-url: ${FRONTEND_RESET_URL:http://localhost:5173/reset}
+  cookie:
+    secure: ${COOKIE_SECURE:true}
   recaptcha:
     enabled: ${RECAPTCHA_ENABLED:false}
     secret-key: ${RECAPTCHA_SECRET_KEY:}
     verify-url: https://www.google.com/recaptcha/api/siteverify
+    # Blank disables the check; set it to the domain the widget is served from.
+    expected-hostname: ${RECAPTCHA_HOSTNAME:}
   two-factor:
     issuer: ${TWO_FACTOR_ISSUER:i-love-shopping}

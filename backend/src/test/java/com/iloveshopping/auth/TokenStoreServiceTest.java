@@ -22,7 +22,9 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -89,6 +91,51 @@ class TokenStoreServiceTest {
         assertThat(captor.getValue())
                 .containsExactlyInAnyOrder("refresh_token:hashA", "refresh_token:hashB");
         verify(redis).delete(setKey);
+    }
+
+    @Test
+    void revokeRefreshToken_deletesTokenWhenCallerOwnsIt() {
+        UUID userId = UUID.randomUUID();
+        String hash = TokenStoreService.sha256("mine");
+        when(valueOps.get("refresh_token:" + hash)).thenReturn(userId.toString());
+
+        service.revokeRefreshToken(userId, "mine");
+
+        verify(redis).delete("refresh_token:" + hash);
+        verify(setOps).remove("refresh_tokens_user:" + userId, hash);
+    }
+
+    @Test
+    void revokeRefreshToken_leavesSomeoneElsesSessionAlone() {
+        // Without the ownership check, any authenticated caller could log another user out by
+        // presenting their refresh token as a logout cookie.
+        UUID caller = UUID.randomUUID();
+        String hash = TokenStoreService.sha256("theirs");
+        when(valueOps.get("refresh_token:" + hash)).thenReturn(UUID.randomUUID().toString());
+
+        service.revokeRefreshToken(caller, "theirs");
+
+        verify(redis, never()).delete("refresh_token:" + hash);
+    }
+
+    @Test
+    void revokeRefreshToken_isIdempotentWhenTokenIsAlreadyGone() {
+        UUID userId = UUID.randomUUID();
+        when(valueOps.get(anyString())).thenReturn(null);
+
+        service.revokeRefreshToken(userId, "already-gone");
+
+        verify(redis, never()).delete(anyString());
+    }
+
+    @Test
+    void findUserIdByUsedRefreshToken_readsTheTombstoneLeftByRotation() {
+        UUID userId = UUID.randomUUID();
+        String hash = TokenStoreService.sha256("spent");
+        when(valueOps.get("used_refresh_token:" + hash)).thenReturn(userId.toString());
+
+        assertThat(service.findUserIdByUsedRefreshToken("spent")).contains(userId);
+        assertThat(service.findUserIdByUsedRefreshToken("never-issued")).isEmpty();
     }
 
     @Test

@@ -118,6 +118,38 @@ class TwoFactorControllerIT {
     }
 
     @Test
+    void setup_withoutThePassword_isRejectedEvenWithAValidAccessToken() throws Exception {
+        String email = uniqueEmail();
+        mockMvc.perform(register(email)).andExpect(status().isCreated());
+        String access = accessToken(mockMvc.perform(login(email)).andReturn());
+
+        // No body at all: the endpoint used to accept this and hand out a fresh secret.
+        mockMvc.perform(post("/auth/2fa/setup")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(access)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/auth/2fa/setup")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"not-the-password\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("invalid_credentials"));
+    }
+
+    @Test
+    void setup_onAnAccountThatAlreadyHasTwoFactor_isRefused() throws Exception {
+        // Otherwise a stolen access token repoints the second factor at the attacker's device.
+        Enrolled user = enroll();
+
+        mockMvc.perform(post("/auth/2fa/setup")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(user.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"" + PW + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error").value("two_factor_already_enabled"));
+    }
+
+    @Test
     void backupCode_completesLoginOnce_thenIsRejected() throws Exception {
         Enrolled user = enroll();
         String backupCode = user.backupCodes().get(0);
@@ -139,7 +171,9 @@ class TwoFactorControllerIT {
         String access = accessToken(mockMvc.perform(login(email)).andReturn());
 
         MvcResult setup = mockMvc.perform(post("/auth/2fa/setup")
-                        .header(HttpHeaders.AUTHORIZATION, bearer(access)))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(access))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"" + PW + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.secret").isNotEmpty())
                 .andExpect(jsonPath("$.otpauthUri", startsWith("otpauth://totp/")))

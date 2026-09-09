@@ -20,6 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -52,6 +53,38 @@ class UserServiceTest {
         assertThat(saved.getFullName()).isEqualTo("Alice");
         assertThat(saved.getRole()).isEqualTo(Role.CUSTOMER);
         assertThat(saved.getAuthProvider()).isEqualTo(AuthProvider.LOCAL);
+    }
+
+    @Test
+    void createLocalUser_foldsEmailToLowerCaseAndTrims() {
+        // A phone keyboard capitalises the first letter; without this the user owns a second
+        // account they can never log into.
+        when(userRepository.existsByEmail("ada@shop.com")).thenReturn(false);
+        when(passwordEncoder.encode(anyString())).thenReturn("hashed");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.createLocalUser("  Ada@Shop.COM  ", "s3cret", "Ada");
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getEmail()).isEqualTo("ada@shop.com");
+    }
+
+    @Test
+    void findByEmail_looksUpTheNormalizedAddress() {
+        // Normalising on write alone would still fail every login typed with a capital.
+        when(userRepository.findByEmail("ada@shop.com")).thenReturn(Optional.of(new User()));
+
+        assertThat(userService.findByEmail("Ada@Shop.com")).isPresent();
+        verify(userRepository).findByEmail("ada@shop.com");
+    }
+
+    @Test
+    void dummyPasswordCheck_runsARealComparison() {
+        userService.dummyPasswordCheck("guess");
+
+        // Same work as a genuine check, so the no-such-user path costs the same time.
+        verify(passwordEncoder).matches(eq("guess"), any());
     }
 
     @Test

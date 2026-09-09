@@ -35,15 +35,19 @@ public class TokenStoreService {
     private static final String REFRESH_KEY = "refresh_token:";
     private static final String USER_SET_KEY = "refresh_tokens_user:";
     private static final String BLOCKLIST_KEY = "token_blocklist:";
+    private static final String USED_KEY = "used_refresh_token:";
 
     // Atomic single-use rotation: reject unless the old hash still maps to this user,
     // then in one step delete the old token and store the new one. A replayed old token
     // finds the key gone and fails. Returns 1 on success, 0 on rejection.
+    // KEYS[4] is the tombstone: the spent hash is remembered for the rest of the refresh
+    // lifetime so a later replay can still be attributed to a user (reuse detection).
     private static final RedisScript<Long> ROTATE_SCRIPT = new DefaultRedisScript<>("""
             local owner = redis.call('GET', KEYS[1])
             if not owner or owner ~= ARGV[1] then return 0 end
             redis.call('DEL', KEYS[1])
             redis.call('SREM', KEYS[3], ARGV[2])
+            redis.call('SET', KEYS[4], ARGV[1], 'EX', ARGV[4])
             redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[4])
             redis.call('SADD', KEYS[3], ARGV[3])
             return 1
@@ -82,7 +86,8 @@ public class TokenStoreService {
 
         Long result = redis.execute(
                 ROTATE_SCRIPT,
-                List.of(REFRESH_KEY + oldHash, REFRESH_KEY + newHash, USER_SET_KEY + userId),
+                List.of(REFRESH_KEY + oldHash, REFRESH_KEY + newHash, USER_SET_KEY + userId,
+                        USED_KEY + oldHash),
                 userId.toString(), oldHash, newHash, String.valueOf(refreshTtl.toSeconds()));
 
         if (result == null || result == 0L) {
@@ -97,10 +102,27 @@ public class TokenStoreService {
         return Optional.ofNullable(userId).map(UUID::fromString);
     }
 
-    /** Revokes a single refresh token (used on logout). No-op if it is already gone. */
+    /**
+     * Resolves the owner of a refresh token that has already been rotated away. A hit means the
+     * presented token was spent earlier and is being replayed — which is only possible if two
+     * parties hold it, so the caller treats it as theft.
+     */
+    public Optional<UUID> findUserIdByUsedRefreshToken(String rawToken) {
+        String userId = redis.opsForValue().get(USED_KEY + sha256(rawToken));
+        return Optional.ofNullable(userId).map(UUID::fromString);
+    }
+
+    /**
+     * Revokes a single refresh token (used on logout). Only the owner may revoke it: without the
+     * check, any authenticated caller could end someone else's session by presenting their token.
+     * No-op if it is already gone, so logout stays idempotent.
+     */
     public void revokeRefreshToken(UUID userId, String rawToken) {
         String hash = sha256(rawToken);
-        redis.delete(REFRESH_KEY + hash);
+        String owner = redis.opsForValue().get(REFRESH_KEY + hash);
+        if (userId.toString().equals(owner)) {
+            redis.delete(REFRESH_KEY + hash);
+        }
         redis.opsForSet().remove(USER_SET_KEY + userId, hash);
     }
 

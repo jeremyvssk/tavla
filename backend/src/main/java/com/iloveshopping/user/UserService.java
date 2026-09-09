@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,9 +20,17 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    /**
+     * A throwaway hash, encoded once at startup so it carries the encoder's real cost. Compared
+     * against on paths that have no user to compare against, so those paths take the same time as
+     * a genuine password check — see {@link #dummyPasswordCheck}.
+     */
+    private final String dummyHash;
+
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     /**
@@ -32,11 +41,12 @@ public class UserService {
      */
     @Transactional
     public User createLocalUser(String email, String rawPassword, String fullName) {
-        if (userRepository.existsByEmail(email)) {
+        String normalizedEmail = normalizeEmail(email);
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new EmailAlreadyExistsException();
         }
         User user = new User();
-        user.setEmail(email);
+        user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(normalizePassword(rawPassword)));
         user.setFullName(fullName);
         try {
@@ -58,11 +68,12 @@ public class UserService {
     }
 
     private User createOAuthUser(OAuthUserInfo info) {
-        if (userRepository.existsByEmail(info.email())) {
+        String normalizedEmail = normalizeEmail(info.email());
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new EmailRegisteredWithPasswordException();
         }
         User user = new User();
-        user.setEmail(info.email());
+        user.setEmail(normalizedEmail);
         user.setFullName(info.fullName());
         user.setAvatarUrl(info.avatarUrl());
         user.setAuthProvider(info.provider());
@@ -83,7 +94,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(email);
+        return userRepository.findByEmail(normalizeEmail(email));
     }
 
     /**
@@ -140,7 +151,26 @@ public class UserService {
         userRepository.save(user);
     }
 
+    /**
+     * Runs a real BCrypt comparison against a hash that matches nothing. Called where there is no
+     * user to check, so "no such account" costs the same time as "wrong password" and response
+     * timing stops revealing which addresses are registered.
+     */
+    public void dummyPasswordCheck(String rawPassword) {
+        passwordEncoder.matches(normalizePassword(rawPassword), dummyHash);
+    }
+
     static String normalizePassword(String raw) {
         return Normalizer.normalize(raw, Normalizer.Form.NFC);
+    }
+
+    /**
+     * Addresses are stored and looked up folded to lower case. Strictly, the local part is
+     * case-sensitive per RFC 5321; no mail provider treats it that way, and the alternative is a
+     * user who capitalises their address on a phone keyboard owning a second, unreachable account.
+     * The DB enforces the same rule with a unique index on lower(email) — see V4.
+     */
+    static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 }

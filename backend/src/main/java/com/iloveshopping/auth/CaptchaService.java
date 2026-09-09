@@ -24,15 +24,18 @@ public class CaptchaService {
     private final boolean enabled;
     private final String secretKey;
     private final String verifyUrl;
+    private final String expectedHostname;
 
     public CaptchaService(RestClient.Builder restClientBuilder,
                           @Value("${app.recaptcha.enabled}") boolean enabled,
                           @Value("${app.recaptcha.secret-key}") String secretKey,
-                          @Value("${app.recaptcha.verify-url}") String verifyUrl) {
+                          @Value("${app.recaptcha.verify-url}") String verifyUrl,
+                          @Value("${app.recaptcha.expected-hostname}") String expectedHostname) {
         this.restClient = restClientBuilder.build();
         this.enabled = enabled;
         this.secretKey = secretKey;
         this.verifyUrl = verifyUrl;
+        this.expectedHostname = expectedHostname;
     }
 
     /**
@@ -60,11 +63,17 @@ public class CaptchaService {
         if (response == null || !response.success()) {
             throw new InvalidCaptchaException();
         }
+        // "Solved" is not enough: a token farmed on a site the attacker controls also comes back
+        // successful. Google reports where it was solved, and that is compared against configuration
+        // — never against the request's own Host header, which the caller sets.
+        if (StringUtils.hasText(expectedHostname) && !expectedHostname.equals(response.hostname())) {
+            throw new InvalidCaptchaException();
+        }
     }
 
-    // Google returns extra fields (challenge_ts, hostname, error-codes); ignore them. The app's
-    // Jackson is configured to fail on unknown properties, so this annotation is required here.
+    // Google returns extra fields (challenge_ts, error-codes); ignore them. The app's Jackson is
+    // configured to fail on unknown properties, so this annotation is required here.
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record SiteVerifyResponse(boolean success) {
+    record SiteVerifyResponse(boolean success, String hostname) {
     }
 }

@@ -11,6 +11,7 @@ import com.iloveshopping.auth.dto.TwoFactorLoginRequest;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.user.User;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -33,10 +34,16 @@ public class AuthController {
 
     private final AuthService authService;
     private final CaptchaService captchaService;
+    // Browsers exempt localhost from the Secure rule but nothing else: over plain http on a LAN
+    // address the cookie is dropped silently and every refresh 401s. Defaults to true so a missing
+    // setting fails closed; dev compose is the only place that turns it off.
+    private final boolean cookieSecure;
 
-    public AuthController(AuthService authService, CaptchaService captchaService) {
+    public AuthController(AuthService authService, CaptchaService captchaService,
+                          @Value("${app.cookie.secure}") boolean cookieSecure) {
         this.authService = authService;
         this.captchaService = captchaService;
+        this.cookieSecure = cookieSecure;
     }
 
     @PostMapping("/register")
@@ -106,7 +113,7 @@ public class AuthController {
     private ResponseCookie.ResponseCookieBuilder baseCookie(String value) {
         return ResponseCookie.from(REFRESH_COOKIE, value)
                 .httpOnly(true)
-                .secure(true)
+                .secure(cookieSecure)
                 .sameSite("Strict")
                 .path(COOKIE_PATH);
     }

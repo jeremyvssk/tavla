@@ -4,6 +4,7 @@ package com.iloveshopping.auth;
 import com.iloveshopping.auth.dto.TwoFactorSetupResponse;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
+import com.iloveshopping.auth.exception.TwoFactorAlreadyEnabledException;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
 import dev.samstevens.totp.code.CodeVerifier;
@@ -43,8 +44,10 @@ import java.util.stream.Collectors;
 public class TwoFactorService {
 
     private static final String PENDING_KEY = "2fa_pending:";
+    private static final String ATTEMPTS_KEY = "2fa_attempts:";
     private static final Duration CHALLENGE_TTL = Duration.ofMinutes(5);
     private static final int BACKUP_CODE_COUNT = 8;
+    private static final int MAX_FAILED_ATTEMPTS = 5;
 
     private final StringRedisTemplate redis;
     private final UserService userService;
@@ -63,8 +66,24 @@ public class TwoFactorService {
         this.issuer = issuer;
     }
 
-    /** Generates a fresh secret (2FA stays disabled until verified) and returns the otpauth:// URI. */
-    public TwoFactorSetupResponse setup(User user) {
+    /**
+     * Generates a fresh secret (2FA stays disabled until verified) and returns the otpauth:// URI.
+     *
+     * <p>Enrolment re-confirms the password for the same reason {@link #disable} does: a valid
+     * access token proves a login happened, not that the account owner is still the one calling.
+     * Re-enrolling over live 2FA is refused outright — the way back is disable (password) then
+     * setup, so a stolen token can never quietly repoint the second factor at another device.
+     *
+     * @throws InvalidCredentialsException if the password is wrong
+     * @throws TwoFactorAlreadyEnabledException if 2FA is already on for this account
+     */
+    public TwoFactorSetupResponse setup(User user, String password) {
+        if (!userService.passwordMatches(user, password)) {
+            throw new InvalidCredentialsException();
+        }
+        if (user.isTwoFactorEnabled()) {
+            throw new TwoFactorAlreadyEnabledException();
+        }
         String secret = secretGenerator.generate();
         userService.setTwoFactorSecret(user.getId(), secret);
         return new TwoFactorSetupResponse(secret, otpauthUri(user.getEmail(), secret));
@@ -95,11 +114,31 @@ public class TwoFactorService {
         userService.disableTwoFactor(user.getId());
     }
 
-    /** Stores a single-use login challenge and returns the raw token to hand back to the client. */
+    /**
+     * Stores a single-use login challenge and returns the raw token to hand back to the client.
+     * The failed-attempt counter is created alongside it, carrying the same TTL from the start:
+     * INCR preserves an existing TTL, so the counter can never outlive its challenge and can never
+     * be left without an expiry the way a later INCR-then-EXPIRE pair could.
+     */
     public String startChallenge(User user) {
         String token = randomToken();
-        redis.opsForValue().set(PENDING_KEY + sha256(token), user.getId().toString(), CHALLENGE_TTL);
+        String hash = sha256(token);
+        redis.opsForValue().set(PENDING_KEY + hash, user.getId().toString(), CHALLENGE_TTL);
+        redis.opsForValue().set(ATTEMPTS_KEY + hash, "0", CHALLENGE_TTL);
         return token;
+    }
+
+    /**
+     * Counts one wrong code against the challenge and kills the challenge once the allowance is
+     * spent, so the five-minute window is not an invitation to walk the million six-digit codes.
+     * The caller returns the same 401 either way — the client is never told it has been cut off.
+     */
+    public void registerFailedAttempt(String token) {
+        String hash = sha256(token);
+        Long failures = redis.opsForValue().increment(ATTEMPTS_KEY + hash);
+        if (failures == null || failures >= MAX_FAILED_ATTEMPTS) {
+            redis.delete(List.of(PENDING_KEY + hash, ATTEMPTS_KEY + hash));
+        }
     }
 
     /** Resolves the user behind a challenge token without consuming it (so a wrong code can be retried). */
@@ -108,9 +147,10 @@ public class TwoFactorService {
         return Optional.ofNullable(userId).map(UUID::fromString);
     }
 
-    /** Consumes (deletes) a challenge token so it can't be reused. */
+    /** Consumes (deletes) a challenge token, and its attempt counter, so neither can be reused. */
     public void consumeChallenge(String token) {
-        redis.delete(PENDING_KEY + sha256(token));
+        String hash = sha256(token);
+        redis.delete(List.of(PENDING_KEY + hash, ATTEMPTS_KEY + hash));
     }
 
     /** True if the code is the current TOTP or an unused backup code (which is then consumed). */

@@ -52,6 +52,10 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       RECAPTCHA_ENABLED: ${RECAPTCHA_ENABLED:-false}
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_HOSTNAME: ${RECAPTCHA_HOSTNAME:-}
+      # Dev runs over plain http, including from other devices on the LAN, where a Secure
+      # cookie would be dropped silently. Production leaves this unset: the default is true.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-i-love-shopping}
     ports:
       - "${BACKEND_PORT:-8080}:8080"

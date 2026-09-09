@@ -4,6 +4,7 @@ package com.iloveshopping.auth;
 import com.iloveshopping.auth.dto.TwoFactorDisableRequest;
 import com.iloveshopping.auth.dto.TwoFactorEnableRequest;
 import com.iloveshopping.auth.dto.TwoFactorEnableResponse;
+import com.iloveshopping.auth.dto.TwoFactorSetupRequest;
 import com.iloveshopping.auth.dto.TwoFactorSetupResponse;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
@@ -28,9 +29,10 @@ public class TwoFactorController {
     }
 
     @PostMapping("/setup")
-    public ResponseEntity<TwoFactorSetupResponse> setup(@AuthenticationPrincipal AuthPrincipal principal) {
+    public ResponseEntity<TwoFactorSetupResponse> setup(@AuthenticationPrincipal AuthPrincipal principal,
+                                                        @Valid @RequestBody TwoFactorSetupRequest request) {
         User user = userService.getById(principal.userId());
-        return ResponseEntity.ok(twoFactorService.setup(user));
+        return ResponseEntity.ok(twoFactorService.setup(user, request.password()));
     }
 
     @PostMapping("/enable")

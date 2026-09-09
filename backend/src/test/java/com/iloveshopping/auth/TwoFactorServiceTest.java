@@ -4,6 +4,7 @@ package com.iloveshopping.auth;
 import com.iloveshopping.auth.dto.TwoFactorSetupResponse;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
+import com.iloveshopping.auth.exception.TwoFactorAlreadyEnabledException;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
 import dev.samstevens.totp.code.CodeGenerator;
@@ -22,6 +23,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -65,8 +67,9 @@ class TwoFactorServiceTest {
     void setup_storesSecretAndReturnsOtpauthUri() {
         UUID id = UUID.randomUUID();
         User user = user(id);
+        when(userService.passwordMatches(user, "pw")).thenReturn(true);
 
-        TwoFactorSetupResponse response = service.setup(user);
+        TwoFactorSetupResponse response = service.setup(user, "pw");
 
         assertThat(response.secret()).isNotBlank();
         assertThat(response.otpauthUri())
@@ -74,6 +77,29 @@ class TwoFactorServiceTest {
                 .contains("issuer=i-love-shopping")
                 .contains("secret=" + response.secret());
         verify(userService).setTwoFactorSecret(id, response.secret());
+    }
+
+    @Test
+    void setup_withWrongPassword_throwsAndStoresNothing() {
+        // A valid access token is not enough to repoint the second factor at another device.
+        User user = user(UUID.randomUUID());
+        when(userService.passwordMatches(user, "wrong")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.setup(user, "wrong"))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(userService, never()).setTwoFactorSecret(any(), anyString());
+    }
+
+    @Test
+    void setup_whenTwoFactorAlreadyEnabled_isRefused() {
+        // Re-enrolment goes through disable (which asks for the password) — never silently over the top.
+        User user = userWithSecret("SECRET");
+        user.setTwoFactorEnabled(true);
+        when(userService.passwordMatches(user, "pw")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.setup(user, "pw"))
+                .isInstanceOf(TwoFactorAlreadyEnabledException.class);
+        verify(userService, never()).setTwoFactorSecret(any(), anyString());
     }
 
     @Test
@@ -145,7 +171,50 @@ class TwoFactorServiceTest {
         assertThat(service.peekChallenge(token)).contains(id);
 
         service.consumeChallenge(token);
-        verify(redis).delete(startsWith("2fa_pending:"));
+        assertThat(deletedKeys()).anyMatch(k -> k.startsWith("2fa_pending:"));
+    }
+
+    @Test
+    void startChallenge_createsTheAttemptCounterWithTheSameTtl() {
+        // Created with its expiry rather than expired later: INCR keeps an existing TTL, so the
+        // counter can never outlive the challenge or be left without one.
+        User user = user(UUID.randomUUID());
+
+        service.startChallenge(user);
+
+        verify(valueOps).set(startsWith("2fa_attempts:"), eq("0"), eq(Duration.ofMinutes(5)));
+    }
+
+    @Test
+    void registerFailedAttempt_keepsChallengeAliveBelowTheLimit() {
+        User user = user(UUID.randomUUID());
+        String token = service.startChallenge(user);
+        when(valueOps.increment(startsWith("2fa_attempts:"))).thenReturn(1L);
+
+        service.registerFailedAttempt(token);
+
+        // A typo must not send the user back to the password screen.
+        verify(redis, never()).delete(any(Collection.class));
+    }
+
+    @Test
+    void registerFailedAttempt_killsChallengeOnTheFifthFailure() {
+        User user = user(UUID.randomUUID());
+        String token = service.startChallenge(user);
+        when(valueOps.increment(startsWith("2fa_attempts:"))).thenReturn(5L);
+
+        service.registerFailedAttempt(token);
+
+        assertThat(deletedKeys())
+                .anyMatch(k -> k.startsWith("2fa_pending:"))
+                .anyMatch(k -> k.startsWith("2fa_attempts:"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<String> deletedKeys() {
+        ArgumentCaptor<Collection<String>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(redis).delete(captor.capture());
+        return captor.getValue();
     }
 
     @Test

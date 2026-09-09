@@ -8,13 +8,18 @@ import com.iloveshopping.user.AuthProvider;
 import com.iloveshopping.user.OAuthUserInfo;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class AuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final UserService userService;
     private final JwtService jwtService;
@@ -40,10 +45,16 @@ public class AuthService {
      * returned and the caller must complete {@link #twoFactorLogin}. Otherwise tokens are issued.
      */
     public LoginResult login(String email, String rawPassword) {
-        User user = userService.findByEmail(email)
-                .orElseThrow(InvalidCredentialsException::new);
+        Optional<User> found = userService.findByEmail(email);
         // OAuth accounts have no local password; reject before touching the (null) hash.
-        if (user.getAuthProvider() != AuthProvider.LOCAL || !userService.passwordMatches(user, rawPassword)) {
+        // Both rejection paths still run a BCrypt comparison, so an unknown address costs the
+        // same time as a known one and the response timing reveals nothing.
+        if (found.isEmpty() || found.get().getAuthProvider() != AuthProvider.LOCAL) {
+            userService.dummyPasswordCheck(rawPassword);
+            throw new InvalidCredentialsException();
+        }
+        User user = found.get();
+        if (!userService.passwordMatches(user, rawPassword)) {
             throw new InvalidCredentialsException();
         }
         if (user.isTwoFactorEnabled()) {
@@ -62,6 +73,9 @@ public class AuthService {
                 .orElseThrow(InvalidTwoFactorCodeException::new);
         User user = userService.getById(userId);
         if (!twoFactorService.verifyCode(user, code)) {
+            // A wrong code leaves the challenge usable so a typo is not fatal — but only up to a
+            // point, or the five-minute window becomes an offer to guess all million codes.
+            twoFactorService.registerFailedAttempt(challenge);
             throw new InvalidTwoFactorCodeException();
         }
         twoFactorService.consumeChallenge(challenge);
@@ -82,7 +96,10 @@ public class AuthService {
      */
     public AuthTokens refresh(String rawRefreshToken) {
         UUID userId = tokenStore.findUserIdByRefreshToken(rawRefreshToken)
-                .orElseThrow(InvalidRefreshTokenException::new);
+                .orElseGet(() -> {
+                    detectReuse(rawRefreshToken);
+                    throw new InvalidRefreshTokenException();
+                });
         String newRefreshToken = tokenStore.rotateRefreshToken(userId, rawRefreshToken);
         User user = userService.getById(userId);
         String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole());
@@ -102,6 +119,18 @@ public class AuthService {
 
     public java.time.Duration refreshTokenTtl() {
         return tokenStore.refreshTokenTtl();
+    }
+
+    /**
+     * A refresh token that is unknown now but was rotated away earlier is being replayed, which
+     * means two parties held it and one of them stole it. There is no way to tell which caller is
+     * the thief, so the whole family is revoked and both must log in with a password again.
+     */
+    private void detectReuse(String rawRefreshToken) {
+        tokenStore.findUserIdByUsedRefreshToken(rawRefreshToken).ifPresent(userId -> {
+            log.warn("Refresh token reuse detected for user {} — revoking all refresh tokens", userId);
+            tokenStore.revokeAllRefreshTokens(userId);
+        });
     }
 
     private AuthTokens issueTokens(User user) {
