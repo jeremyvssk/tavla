@@ -1,6 +1,6 @@
 # Folder Structure
 
-Actual layout as of 2026-09-09. Entries marked *(planned)* do not exist yet — everything else is
+Actual layout as of 2026-09-15. Entries marked *(planned)* do not exist yet — everything else is
 real. Keep this file honest; a structure doc that lists imaginary files is worse than none.
 
 ```
@@ -32,22 +32,29 @@ i-love-shopping1/
 │       ├── auth/                # AuthController, AuthService, JwtService, TokenStoreService,
 │       │   ├── dto/             # JwtAuthenticationFilter, TwoFactorService/Controller,
 │       │   └── exception/       # PasswordResetService/Controller, CaptchaService,
-│       │                        # EmailService, GoogleTokenVerifier
-│       └── catalog/             # (planned) BUILD_ORDER #8–9
-│           ├── SearchService.java / PostgresSearchService.java   (planned)
-│           ├── dto/ exception/                                   (planned)
+│       │                        # EmailService, GoogleTokenVerifier, AccountThrottle,
+│       │                        # OpaqueTokens
+│       ├── catalog/             # Product, Category, Brand, ProductImage, ProductReview + repos,
+│       │   ├── dto/             # services and controllers; ImageProcessor, UnitConversion
+│       │   ├── exception/
+│       │   └── search/          # SearchService, PostgresSearchService, SuggestionController
+│       ├── ratelimit/           # RateLimiter (Redis Lua), RateLimitFilter (per-IP rules)
+│       └── storage/             # StorageService, LocalStorageService
 │   └── src/main/resources/
 │       ├── application.yml
-│       └── db/migration/        # V1__initial_schema, V2__oauth_nullable_password,
-│                                # V3__widen_two_factor_backup_codes
+│       ├── db/migration/        # V1__initial_schema … V4__case_insensitive_email_unique,
+│       │                        # V5__catalog_search_indexes, V6__product_rating_trigger
+│       └── db/seed/             # R__seed_catalog (repeatable demo catalog)
 │   └── src/test/java/com/iloveshopping/
 │       ├── auth/                # JwtServiceTest, TokenStoreServiceTest, TwoFactorServiceTest,
 │       │                        # PasswordResetServiceTest, CaptchaServiceTest,
 │       │                        # GoogleTokenVerifierTest, AuthControllerIT,
 │       │                        # PasswordResetControllerIT, TwoFactorControllerIT
 │       ├── user/                # UserServiceTest
-│       ├── catalog/             # (planned)
-│       └── security/            # (planned) InputValidationTest — BUILD_ORDER #11
+│       ├── catalog/             # CatalogBrowseIT, ProductAdminIT, SearchIT, ReviewIT,
+│       │                        # ProductImageIT + unit tests
+│       ├── security/            # InputValidationIT, RateLimitIT
+│       └── support/             # AbstractIntegrationTest, CatalogTestSupport, TestImages
 │
 └── frontend/
     ├── Dockerfile               # multi-stage: bun build → nginx serve
@@ -55,11 +62,20 @@ i-love-shopping1/
     ├── package.json, bun.lock
     ├── vite.config.ts           # Vite + Vitest + dev proxy mirroring nginx
     └── src/
-        ├── main.tsx, App.tsx, index.css
-        ├── pages/               # HomePage; the rest planned
-        ├── features/auth/       # (planned) LoginForm, RegisterForm, authSlice, authService
-        ├── features/catalog/    # (planned) ProductCard, SearchBar, FacetPanel
-        └── shared/              # (planned) lib/axios.ts, lib/queryClient.ts, components/ui/
+        ├── main.tsx             # providers: Redux, React Query, router; initial theme
+        ├── App.tsx              # routes + session restore
+        ├── index.css            # both theme token sets + all component styles
+        ├── api/                 # client.ts (axios, in-memory token, refresh), auth.ts,
+        │                        # catalog.ts, errors.ts
+        ├── auth/session.ts      # restore / start / end session
+        ├── store/               # Redux store + authSlice (user, never the token)
+        ├── validation/          # authRules.ts: client copies of the DTO constraints
+        ├── pages/               # Home, Catalog, Product, Login, Register, ForgotPassword,
+        │                        # ResetPassword, Account (+ *.test.tsx)
+        ├── components/          # Layout, SearchBox, Field, RequireAuth, ProductCard, Stars,
+        │                        # ThemeToggle, GoogleButton, Recaptcha
+        ├── hooks/, lib/         # useDebouncedValue; loadScript, format
+        └── test/                # Vitest setup, renderWithProviders
 ```
 
 **Conventions**

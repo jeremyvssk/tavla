@@ -8,12 +8,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -55,7 +50,6 @@ public class TokenStoreService {
 
     private final StringRedisTemplate redis;
     private final Duration refreshTtl;
-    private final SecureRandom random = new SecureRandom();
 
     public TokenStoreService(StringRedisTemplate redis,
                              @Value("${app.refresh-token.ttl}") String refreshTtl) {
@@ -65,8 +59,8 @@ public class TokenStoreService {
 
     /** Issues a new refresh token for the user and returns the raw value to hand to the client. */
     public String issueRefreshToken(UUID userId) {
-        String raw = randomToken();
-        String hash = sha256(raw);
+        String raw = OpaqueTokens.generate();
+        String hash = OpaqueTokens.sha256(raw);
         redis.opsForValue().set(REFRESH_KEY + hash, userId.toString(), refreshTtl);
         redis.opsForSet().add(USER_SET_KEY + userId, hash);
         return raw;
@@ -80,9 +74,9 @@ public class TokenStoreService {
      * @throws InvalidRefreshTokenException if the presented token is unknown or not owned by the user
      */
     public String rotateRefreshToken(UUID userId, String rawToken) {
-        String oldHash = sha256(rawToken);
-        String newRaw = randomToken();
-        String newHash = sha256(newRaw);
+        String oldHash = OpaqueTokens.sha256(rawToken);
+        String newRaw = OpaqueTokens.generate();
+        String newHash = OpaqueTokens.sha256(newRaw);
 
         Long result = redis.execute(
                 ROTATE_SCRIPT,
@@ -98,7 +92,7 @@ public class TokenStoreService {
 
     /** Resolves the owning user of a refresh token, or empty if it is unknown or expired. */
     public Optional<UUID> findUserIdByRefreshToken(String rawToken) {
-        String userId = redis.opsForValue().get(REFRESH_KEY + sha256(rawToken));
+        String userId = redis.opsForValue().get(REFRESH_KEY + OpaqueTokens.sha256(rawToken));
         return Optional.ofNullable(userId).map(UUID::fromString);
     }
 
@@ -108,7 +102,7 @@ public class TokenStoreService {
      * parties hold it, so the caller treats it as theft.
      */
     public Optional<UUID> findUserIdByUsedRefreshToken(String rawToken) {
-        String userId = redis.opsForValue().get(USED_KEY + sha256(rawToken));
+        String userId = redis.opsForValue().get(USED_KEY + OpaqueTokens.sha256(rawToken));
         return Optional.ofNullable(userId).map(UUID::fromString);
     }
 
@@ -118,7 +112,7 @@ public class TokenStoreService {
      * No-op if it is already gone, so logout stays idempotent.
      */
     public void revokeRefreshToken(UUID userId, String rawToken) {
-        String hash = sha256(rawToken);
+        String hash = OpaqueTokens.sha256(rawToken);
         String owner = redis.opsForValue().get(REFRESH_KEY + hash);
         if (userId.toString().equals(owner)) {
             redis.delete(REFRESH_KEY + hash);
@@ -148,21 +142,5 @@ public class TokenStoreService {
     /** Refresh token lifetime, used to align the client cookie's Max-Age with the Redis TTL. */
     public Duration refreshTokenTtl() {
         return refreshTtl;
-    }
-
-    private String randomToken() {
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 }

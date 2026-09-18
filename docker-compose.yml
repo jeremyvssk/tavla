@@ -56,9 +56,13 @@ services:
       # Dev runs over plain http, including from other devices on the LAN, where a Secure
       # cookie would be dropped silently. Production leaves this unset: the default is true.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
       TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-i-love-shopping}
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      # Loopback only. Tomcat trusts X-Real-IP from private addresses, so a backend reachable from
+      # the LAN would let any client choose its own address and step around the per-IP rate limits.
+      # Other devices use nginx on FRONTEND_PORT, which overwrites that header.
+      - "127.0.0.1:${BACKEND_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,6 +76,10 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # The same Google client and reCAPTCHA keypair the backend verifies against; both are public.
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        VITE_RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     depends_on:

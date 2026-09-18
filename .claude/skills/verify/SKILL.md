@@ -71,7 +71,7 @@ cd backend && mvn verify     # unit (surefire) + *IT integration (failsafe)
 ## Frontend wiring
 
 ```sh
-cd frontend && bun test      # Vitest + Testing Library, jsdom
+cd frontend && bun run test  # Vitest + Testing Library, jsdom (plain `bun test` is Bun's own runner)
 ```
 
 Config lives in `vite.config.ts` under `test`. `globals: true`, so no per-file imports of
@@ -82,7 +82,7 @@ real tests, not just working code.
 
 Check these off against reality before claiming a suite is complete:
 
-- `security/InputValidationTest` — specified in BUILD_ORDER #11, still not written
-- Catalog: product model unit tests, controller integration tests
-- Search: relevance ordering, facet counts, autocomplete
-- Frontend: any test at all
+- Frontend: catalog and account pages have no component tests yet (auth forms, validation rules
+  and the refresh interceptor landed 2026-09-15)
+- Integration tests extend `support/AbstractIntegrationTest` (one shared Postgres + Redis);
+  catalog tests use `support/CatalogTestSupport` for admin/customer tokens and isolated data

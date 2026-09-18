@@ -51,7 +51,7 @@ class TokenStoreServiceTest {
         String raw = service.issueRefreshToken(userId);
 
         // The raw token is returned to the client but never stored as-is.
-        String expectedHash = TokenStoreService.sha256(raw);
+        String expectedHash = OpaqueTokens.sha256(raw);
         verify(valueOps).set("refresh_token:" + expectedHash, userId.toString(), Duration.ofDays(7));
         verify(setOps).add("refresh_tokens_user:" + userId, expectedHash);
     }
@@ -96,7 +96,7 @@ class TokenStoreServiceTest {
     @Test
     void revokeRefreshToken_deletesTokenWhenCallerOwnsIt() {
         UUID userId = UUID.randomUUID();
-        String hash = TokenStoreService.sha256("mine");
+        String hash = OpaqueTokens.sha256("mine");
         when(valueOps.get("refresh_token:" + hash)).thenReturn(userId.toString());
 
         service.revokeRefreshToken(userId, "mine");
@@ -110,7 +110,7 @@ class TokenStoreServiceTest {
         // Without the ownership check, any authenticated caller could log another user out by
         // presenting their refresh token as a logout cookie.
         UUID caller = UUID.randomUUID();
-        String hash = TokenStoreService.sha256("theirs");
+        String hash = OpaqueTokens.sha256("theirs");
         when(valueOps.get("refresh_token:" + hash)).thenReturn(UUID.randomUUID().toString());
 
         service.revokeRefreshToken(caller, "theirs");
@@ -131,7 +131,7 @@ class TokenStoreServiceTest {
     @Test
     void findUserIdByUsedRefreshToken_readsTheTombstoneLeftByRotation() {
         UUID userId = UUID.randomUUID();
-        String hash = TokenStoreService.sha256("spent");
+        String hash = OpaqueTokens.sha256("spent");
         when(valueOps.get("used_refresh_token:" + hash)).thenReturn(userId.toString());
 
         assertThat(service.findUserIdByUsedRefreshToken("spent")).contains(userId);
@@ -156,8 +156,8 @@ class TokenStoreServiceTest {
 
     @Test
     void sha256_isDeterministicAndUrlSafe() {
-        String a = TokenStoreService.sha256("token");
-        String b = TokenStoreService.sha256("token");
+        String a = OpaqueTokens.sha256("token");
+        String b = OpaqueTokens.sha256("token");
 
         assertThat(a).isEqualTo(b).doesNotContain("+", "/", "=");
     }

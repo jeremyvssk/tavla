@@ -1,79 +1,34 @@
 // Integration tests for the auth endpoints against real Postgres + Redis (Testcontainers).
 package com.iloveshopping.auth;
 
+import com.iloveshopping.support.AbstractIntegrationTest;
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.WebApplicationContext;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Instant;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-class AuthControllerIT {
-
-    // Singleton containers started once and shared; Testcontainers' Ryuk reaps them at JVM exit.
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-    static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
-
-    static {
-        postgres.start();
-        redis.start();
-    }
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.data.redis.url",
-                () -> "redis://" + redis.getHost() + ":" + redis.getMappedPort(6379));
-        registry.add("app.jwt.secret", () -> "integration-test-secret-that-is-long-enough-hs256");
-        registry.add("app.oauth.google.client-id", () -> "test-client-id");
-        // Mail is unused in these tests; a host just satisfies the auto-configuration.
-        registry.add("spring.mail.host", () -> "localhost");
-        registry.add("spring.mail.port", () -> "1025");
-    }
-
-    @Autowired
-    WebApplicationContext context;
+class AuthControllerIT extends AbstractIntegrationTest {
 
     // Replaces the real Google decoder so tests never call Google; we stub the decoded claims.
     @MockitoBean
     JwtDecoder googleIdTokenDecoder;
-
-    MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-    }
 
     @Test
     void register_succeeds_thenDuplicateEmailConflicts() throws Exception {
@@ -155,6 +110,26 @@ class AuthControllerIT {
         // The same token is now blocklisted, so a second call is unauthenticated.
         mockMvc.perform(post("/auth/logout").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void me_returnsTheCallersProfile_andRequiresAToken() throws Exception {
+        String email = uniqueEmail();
+        mockMvc.perform(register(email, "password123", "Test User")).andExpect(status().isCreated());
+        String accessToken = accessToken(mockMvc.perform(login(email, "password123")).andReturn());
+
+        mockMvc.perform(get("/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value(email))
+                .andExpect(jsonPath("$.fullName").value("Test User"))
+                .andExpect(jsonPath("$.role").value("CUSTOMER"))
+                .andExpect(jsonPath("$.authProvider").value("LOCAL"))
+                .andExpect(jsonPath("$.twoFactorEnabled").value(false))
+                // Nothing secret leaves the server through the profile.
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.twoFactorSecret").doesNotExist());
+
+        mockMvc.perform(get("/auth/me")).andExpect(status().isUnauthorized());
     }
 
     @Test

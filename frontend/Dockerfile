@@ -4,6 +4,10 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 COPY . .
+# Public, build-time values baked into the bundle. Empty hides Google sign-in and the CAPTCHA widget.
+ARG VITE_GOOGLE_CLIENT_ID=
+ARG VITE_RECAPTCHA_SITE_KEY=
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID VITE_RECAPTCHA_SITE_KEY=$VITE_RECAPTCHA_SITE_KEY
 RUN bun run build
 
 # Stage 2: serve the static bundle with nginx

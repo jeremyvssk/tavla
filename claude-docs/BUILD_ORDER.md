@@ -1,6 +1,6 @@
 # Build Order (P1)
 
-Status as of 2026-09-09. Sequence matters: each step's verification is the next step's foundation.
+Status as of 2026-09-15. Sequence matters: each step's verification is the next step's foundation.
 
 ## Done
 
@@ -18,30 +18,42 @@ Status as of 2026-09-09. Sequence matters: each step's verification is the next 
 - **6. Google OAuth.** Manual test.
 - **7. 2FA, CAPTCHA, password reset, email via MailHog.**
 
+- **8. `catalog` domain.** Entities, repositories, services, controllers, DTOs for products,
+  categories, brands, images and reviews. Public read, admin write (path rules in
+  `SecurityConfig`), review delete owner-or-admin. Offset pagination, Summary + Detail DTOs.
+  *Verified:* `CatalogBrowseIT`, `ProductAdminIT`, `ReviewIT`, `ProductRequestValidationTest`.
+- **9. Search.** `SearchService` + `PostgresSearchService` on `JdbcClient`: weighted `ts_rank`
+  relevance, facets that omit their own filter, recursive category subtree, `pg_trgm` suggestions.
+  V5 adds the GIN, trigram, FK and sort indexes; V6 the rating trigger.
+  *Verified:* `SearchIT`; `EXPLAIN ANALYZE` over 50k rows shows bitmap scans on both GIN indexes.
+- **10. Seed data.** `db/seed/R__seed_catalog.sql`, repeatable: 61 chess and strategy-game
+  products, 8 brands, a three-level tree, generated reviews.
+- **11. Security tests.** `security/InputValidationIT` — injection probes, oversized strings,
+  deep JSON, mass assignment, hostile uploads. *Verified:* 27 probes, none leak internals.
+- **12. Product images.** `ImageProcessor` (magic bytes, header dimension cap, re-encode) behind
+  `StorageService`. *Verified:* `ProductImageIT`, and a live upload served by nginx with `nosniff`.
+
+- **12b. Rate limiting + search fallback.** `ratelimit/` (Redis fixed window, per-IP filter) and
+  `auth/AccountThrottle` (per account+IP and per account on login, per address on reset emails).
+  Client IP from nginx's `X-Real-IP` via Tomcat's RemoteIpValve; backend port on loopback only.
+  Search retries name trigrams when full-text finds nothing (`approximate` in the response).
+  *Verified:* `RateLimitIT`, `SearchIT`; live through nginx, spoofed `X-Real-IP` still limited.
+- **13. Frontend auth.** Redux auth state (never the token), Axios instance with the token in a
+  module variable and a single-flight refresh on `unauthorized` 401s, restore on load via
+  `/auth/refresh` + `GET /auth/me`, login/2FA/register/forgot/reset/account pages with client-side
+  validation, reCAPTCHA and Google button when their keys are set.
+- **14. Frontend catalog.** Catalog with URL-held facets, sort and paging; product page with specs
+  and reviews; debounced search-as-you-type combobox. SPA routes avoid proxied API prefixes
+  (`/catalog`, not `/products`).
+- **15. Frontend tests.** Vitest: validation rules, login and register forms, refresh interceptor.
+  *Verified:* 27 tests; the single-flight test fails when the guard is removed. Playwright
+  (Firefox) walk of every page in both themes, reload keeps the session, storage holds no token.
+
 ## Remaining
 
-- **8. `catalog` domain.** Entities, repositories, services, controllers, DTOs for products,
-  categories and brands. Public read vs. admin write. Pagination.
-  *Design session first* — entities, DTO boundaries, which fields are client-writable, how admin
-  CRUD differs from public read. Load `new-endpoint`.
-  *Verify:* unit tests on the product model; `ProductControllerIT` covering 400/401/403/404.
-- **9. Search.** `SearchService` interface, then `PostgresSearchService`: `ts_rank` relevance,
-  `pg_trgm` autocomplete, SQL-computed facets, sorting by relevance/price/rating.
-  Needs a migration for the GIN index on `search_vector` and the trigram index — load
-  `flyway-migration`. *Verify:* `EXPLAIN ANALYZE` shows the indexes are used, not just present.
-- **10. Seed data.** Enough products, categories, brands and reviews that facets and sorting have
-  something to bite on. Without this steps 8–9 cannot be demonstrated at review.
-- **11. Security tests.** `security/InputValidationTest` — injection probes, oversized strings,
-  deep JSON, path traversal, mass assignment. *The author proposes the probe cases first.*
-  Load `verify`.
-- **12. Product images.** Upload with the full validation checklist, written to the
-  `product_images_data` volume; nginx already serves `/images/`.
-- **13. Frontend auth.** Redux store, Axios interceptor, access token in a module variable,
-  refresh-on-mount, login/register/reset/2FA screens with client-side validation.
-  *Design session first* — where the token lives, the refresh flow, the Redux vs React Query split.
-- **14. Frontend catalog.** Product list, detail, search with debounced autocomplete, facet panel,
-  sort controls.
-- **15. Frontend tests.** Vitest + Testing Library; client-side validation is a graded requirement.
+- **16. Choose a theme.** Delete the other token block, its accents and fonts, and `ThemeToggle`.
+- **17. Rehearsal (P1 endgame phase 5).** Manual test script, live reCAPTCHA key, ERD modality
+  check, spoken answers, timed clean-clone run.
 
 Architecture and request flow are documented in [../README.md](../README.md#architecture) — that is
 the single source, kept accurate because reviewers read it.

@@ -1,6 +1,6 @@
 # i-love-shopping — Project Context
 
-B2C e-commerce platform (Japanese products). School project in 3 parts.
+B2C e-commerce platform (demo catalog: chess & strategy games; the final niche is still open). School project in 3 parts.
 **Current scope: Project 1** — auth, database, product catalog.
 
 The assignment brief and its review checklist are in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
@@ -173,5 +173,4 @@ See [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md)
 
 - Image CDN strategy for production (currently: Docker volume + nginx)
 - GDPR data export format (JSON dump of user record + orders)
-- Rate limiting (not in P1 rubric but relevant for CAPTCHA bypass)
 - Elasticsearch for P3 — SearchService interface is already the abstraction point

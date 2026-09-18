@@ -17,7 +17,8 @@ spring:
 
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    # db/seed holds the repeatable demo catalog; a production deploy sets FLYWAY_LOCATIONS without it.
+    locations: ${FLYWAY_LOCATIONS:classpath:db/migration,classpath:db/seed}
     baseline-on-migrate: false
 
   data:
@@ -42,8 +43,14 @@ spring:
 
 server:
   port: 8080
+  # Behind nginx every request arrives from the proxy's address. Tomcat's RemoteIpValve swaps in
+  # the client address from X-Real-IP, which nginx sets (overwriting anything the client sent), so
+  # rate limits count real clients. Only honoured when the direct peer is a private address.
+  forward-headers-strategy: native
   tomcat:
     max-http-form-post-size: 1MB
+    remoteip:
+      remote-ip-header: X-Real-IP
 
 app:
   jwt:
@@ -66,5 +73,12 @@ app:
     verify-url: https://www.google.com/recaptcha/api/siteverify
     # Blank disables the check; set it to the domain the widget is served from.
     expected-hostname: ${RECAPTCHA_HOSTNAME:}
+  rate-limit:
+    # Integration tests switch this off: they share one Redis and all arrive from 127.0.0.1.
+    enabled: ${RATE_LIMIT_ENABLED:true}
   two-factor:
     issuer: ${TWO_FACTOR_ISSUER:i-love-shopping}
+  storage:
+    # The product_images_data volume; nginx serves the same directory at /images.
+    images-dir: ${IMAGES_DIR:/var/app/images}
+    public-prefix: /images

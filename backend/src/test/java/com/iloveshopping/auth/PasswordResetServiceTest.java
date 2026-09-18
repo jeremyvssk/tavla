@@ -47,12 +47,16 @@ class PasswordResetServiceTest {
     @Mock
     TokenStoreService tokenStore;
 
+    @Mock
+    AccountThrottle accountThrottle;
+
     PasswordResetService service;
 
     @BeforeEach
     void setUp() {
         lenient().when(redis.opsForValue()).thenReturn(valueOps);
-        service = new PasswordResetService(redis, userService, emailService, tokenStore,
+        lenient().when(accountThrottle.allowResetEmail(anyString())).thenReturn(true);
+        service = new PasswordResetService(redis, userService, emailService, tokenStore, accountThrottle,
                 "http://localhost:5173/reset");
     }
 
@@ -86,15 +90,29 @@ class PasswordResetServiceTest {
     }
 
     @Test
-    void confirmReset_updatesPassword_consumesToken_andRevokesAllSessions() {
+    void requestReset_overThePerAddressLimit_sendsNothing() {
+        when(accountThrottle.allowResetEmail("alice@example.com")).thenReturn(false);
+
+        service.requestReset("alice@example.com");
+
+        verifyNoInteractions(emailService, userService);
+    }
+
+    @Test
+    void confirmReset_updatesPassword_consumesToken_revokesAllSessions_andLiftsLoginLockout() {
         UUID id = UUID.randomUUID();
+        User user = new User();
+        user.setId(id);
+        user.setEmail("alice@example.com");
         when(valueOps.get(anyString())).thenReturn(id.toString());
+        when(userService.getById(id)).thenReturn(user);
 
         service.confirmReset("raw-token", "newpassword123");
 
         verify(userService).updatePassword(id, "newpassword123");
         verify(redis).delete(startsWith("pwreset:"));
         verify(tokenStore).revokeAllRefreshTokens(id);
+        verify(accountThrottle).clearLogin("alice@example.com");
     }
 
     @Test

@@ -7,12 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.UUID;
 
 /**
@@ -31,37 +26,44 @@ public class PasswordResetService {
     private final UserService userService;
     private final EmailService emailService;
     private final TokenStoreService tokenStore;
+    private final AccountThrottle accountThrottle;
     private final String resetUrl;
-    private final SecureRandom random = new SecureRandom();
 
     public PasswordResetService(StringRedisTemplate redis, UserService userService,
                                 EmailService emailService, TokenStoreService tokenStore,
+                                AccountThrottle accountThrottle,
                                 @Value("${app.frontend.reset-url}") String resetUrl) {
         this.redis = redis;
         this.userService = userService;
         this.emailService = emailService;
         this.tokenStore = tokenStore;
+        this.accountThrottle = accountThrottle;
         this.resetUrl = resetUrl;
     }
 
     /**
      * Starts a reset. If the email maps to a user, store a token fingerprint in Redis and email
      * the raw token. Silent on a miss so the endpoint can't be used to probe which emails exist.
+     * Also silent over the per-address email limit, which stops the endpoint flooding someone's inbox.
      */
     public void requestReset(String email) {
+        if (!accountThrottle.allowResetEmail(email)) {
+            return;
+        }
         userService.findByEmail(email).ifPresent(user -> {
-            String rawToken = randomToken();
-            redis.opsForValue().set(RESET_KEY + sha256(rawToken), user.getId().toString(), TTL);
+            String rawToken = OpaqueTokens.generate();
+            redis.opsForValue().set(RESET_KEY + OpaqueTokens.sha256(rawToken), user.getId().toString(), TTL);
             emailService.sendPasswordReset(user.getEmail(), resetUrl + "?token=" + rawToken);
         });
     }
 
     /**
      * Completes a reset: validates the token, sets the new password, consumes the token
-     * (single-use), and revokes every refresh token so existing sessions die.
+     * (single-use), revokes every refresh token so existing sessions die, and lifts any login
+     * lockout on the account: whoever holds the emailed link owns the inbox.
      */
     public void confirmReset(String rawToken, String newPassword) {
-        String key = RESET_KEY + sha256(rawToken);
+        String key = RESET_KEY + OpaqueTokens.sha256(rawToken);
         String userId = redis.opsForValue().get(key);
         if (userId == null) {
             throw new InvalidResetTokenException();
@@ -70,21 +72,6 @@ public class PasswordResetService {
         userService.updatePassword(uid, newPassword);
         redis.delete(key);
         tokenStore.revokeAllRefreshTokens(uid);
-    }
-
-    private String randomToken() {
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
+        accountThrottle.clearLogin(userService.getById(uid).getEmail());
     }
 }

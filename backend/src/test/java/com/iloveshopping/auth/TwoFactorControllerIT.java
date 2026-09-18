@@ -1,27 +1,17 @@
 // Integration tests for the full 2FA flow (setup, enable, challenge login, backup codes, disable).
 package com.iloveshopping.auth;
 
+import com.iloveshopping.support.AbstractIntegrationTest;
 import com.jayway.jsonpath.JsonPath;
 import dev.samstevens.totp.code.CodeGenerator;
 import dev.samstevens.totp.code.DefaultCodeGenerator;
 import dev.samstevens.totp.time.SystemTimeProvider;
 import dev.samstevens.totp.time.TimeProvider;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.WebApplicationContext;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
 import java.util.Set;
@@ -29,51 +19,17 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.startsWith;
-import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
-class TwoFactorControllerIT {
-
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
-    static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
-
-    static {
-        postgres.start();
-        redis.start();
-    }
-
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.data.redis.url",
-                () -> "redis://" + redis.getHost() + ":" + redis.getMappedPort(6379));
-        registry.add("app.jwt.secret", () -> "integration-test-secret-that-is-long-enough-hs256");
-        registry.add("app.oauth.google.client-id", () -> "test-client-id");
-        registry.add("spring.mail.host", () -> "localhost");
-        registry.add("spring.mail.port", () -> "1025");
-    }
+class TwoFactorControllerIT extends AbstractIntegrationTest {
 
     private static final String PW = "password123";
 
-    @Autowired
-    WebApplicationContext context;
-
-    MockMvc mockMvc;
-
     private final CodeGenerator codeGenerator = new DefaultCodeGenerator();
     private final TimeProvider timeProvider = new SystemTimeProvider();
-
-    @BeforeEach
-    void setUp() {
-        mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
-    }
 
     @Test
     void fullTotpFlow_setupEnableChallengeLoginAndDisable() throws Exception {

@@ -20,14 +20,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,7 +52,6 @@ public class TwoFactorService {
     private final RecoveryCodeGenerator recoveryCodeGenerator = new RecoveryCodeGenerator();
     private final CodeVerifier codeVerifier =
             new DefaultCodeVerifier(new DefaultCodeGenerator(), new SystemTimeProvider());
-    private final SecureRandom random = new SecureRandom();
 
     public TwoFactorService(StringRedisTemplate redis, UserService userService,
                             @Value("${app.two-factor.issuer}") String issuer) {
@@ -98,7 +92,7 @@ public class TwoFactorService {
             throw new InvalidTwoFactorCodeException();
         }
         List<String> backupCodes = List.of(recoveryCodeGenerator.generateCodes(BACKUP_CODE_COUNT));
-        String hashed = backupCodes.stream().map(TwoFactorService::sha256).collect(Collectors.joining(","));
+        String hashed = backupCodes.stream().map(OpaqueTokens::sha256).collect(Collectors.joining(","));
         userService.enableTwoFactor(user.getId(), hashed);
         return backupCodes;
     }
@@ -121,8 +115,8 @@ public class TwoFactorService {
      * be left without an expiry the way a later INCR-then-EXPIRE pair could.
      */
     public String startChallenge(User user) {
-        String token = randomToken();
-        String hash = sha256(token);
+        String token = OpaqueTokens.generate();
+        String hash = OpaqueTokens.sha256(token);
         redis.opsForValue().set(PENDING_KEY + hash, user.getId().toString(), CHALLENGE_TTL);
         redis.opsForValue().set(ATTEMPTS_KEY + hash, "0", CHALLENGE_TTL);
         return token;
@@ -134,7 +128,7 @@ public class TwoFactorService {
      * The caller returns the same 401 either way — the client is never told it has been cut off.
      */
     public void registerFailedAttempt(String token) {
-        String hash = sha256(token);
+        String hash = OpaqueTokens.sha256(token);
         Long failures = redis.opsForValue().increment(ATTEMPTS_KEY + hash);
         if (failures == null || failures >= MAX_FAILED_ATTEMPTS) {
             redis.delete(List.of(PENDING_KEY + hash, ATTEMPTS_KEY + hash));
@@ -143,13 +137,13 @@ public class TwoFactorService {
 
     /** Resolves the user behind a challenge token without consuming it (so a wrong code can be retried). */
     public Optional<UUID> peekChallenge(String token) {
-        String userId = redis.opsForValue().get(PENDING_KEY + sha256(token));
+        String userId = redis.opsForValue().get(PENDING_KEY + OpaqueTokens.sha256(token));
         return Optional.ofNullable(userId).map(UUID::fromString);
     }
 
     /** Consumes (deletes) a challenge token, and its attempt counter, so neither can be reused. */
     public void consumeChallenge(String token) {
-        String hash = sha256(token);
+        String hash = OpaqueTokens.sha256(token);
         redis.delete(List.of(PENDING_KEY + hash, ATTEMPTS_KEY + hash));
     }
 
@@ -167,7 +161,7 @@ public class TwoFactorService {
             return false;
         }
         List<String> hashes = new ArrayList<>(Arrays.asList(stored.split(",")));
-        if (!hashes.remove(sha256(code))) {
+        if (!hashes.remove(OpaqueTokens.sha256(code))) {
             return false;
         }
         userService.replaceBackupCodes(user.getId(), String.join(",", hashes));
@@ -184,20 +178,5 @@ public class TwoFactorService {
                 .period(30)
                 .build()
                 .getUri();
-    }
-
-    private String randomToken() {
-        byte[] bytes = new byte[32];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private static String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 }

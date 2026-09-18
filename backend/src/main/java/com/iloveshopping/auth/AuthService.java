@@ -26,14 +26,17 @@ public class AuthService {
     private final TokenStoreService tokenStore;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final TwoFactorService twoFactorService;
+    private final AccountThrottle accountThrottle;
 
     public AuthService(UserService userService, JwtService jwtService, TokenStoreService tokenStore,
-                       GoogleTokenVerifier googleTokenVerifier, TwoFactorService twoFactorService) {
+                       GoogleTokenVerifier googleTokenVerifier, TwoFactorService twoFactorService,
+                       AccountThrottle accountThrottle) {
         this.userService = userService;
         this.jwtService = jwtService;
         this.tokenStore = tokenStore;
         this.googleTokenVerifier = googleTokenVerifier;
         this.twoFactorService = twoFactorService;
+        this.accountThrottle = accountThrottle;
     }
 
     public User register(String email, String rawPassword, String fullName) {
@@ -43,8 +46,10 @@ public class AuthService {
     /**
      * Verifies the password. If 2FA is enabled, no tokens are issued yet — a short-lived challenge is
      * returned and the caller must complete {@link #twoFactorLogin}. Otherwise tokens are issued.
+     * The attempt is counted against the account before the password is looked at.
      */
-    public LoginResult login(String email, String rawPassword) {
+    public LoginResult login(String email, String rawPassword, String clientIp) {
+        accountThrottle.checkLogin(email, clientIp);
         Optional<User> found = userService.findByEmail(email);
         // OAuth accounts have no local password; reject before touching the (null) hash.
         // Both rejection paths still run a BCrypt comparison, so an unknown address costs the
@@ -57,6 +62,7 @@ public class AuthService {
         if (!userService.passwordMatches(user, rawPassword)) {
             throw new InvalidCredentialsException();
         }
+        accountThrottle.loginSucceeded(email, clientIp);
         if (user.isTwoFactorEnabled()) {
             return LoginResult.twoFactorRequired(twoFactorService.startChallenge(user));
         }

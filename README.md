@@ -1,16 +1,18 @@
 # i-love-shopping
 
-A B2C e-commerce platform for Japanese homeware — ceramics, stationery, kitchenware and tea,
-sourced from small makers.
+A B2C e-commerce platform. The demo catalog is **chess sets and strategy games**: sets, boards,
+pieces, clocks, go and backgammon. The final niche is still open; nothing in the code depends on
+it except the seed data.
 
 Built in three projects. **This repository is Project 1 (Foundation):** secure user accounts, a
 relational database designed for growth, and the product catalog that Projects 2 (Commerce) and
 3 (Experience) build on. The assignment brief is kept verbatim at
 [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
 
-> **Status — read this first.** Authentication is complete and tested end to end. The catalog
-> domain and the customer-facing UI are in progress. See [Project status](#project-status) for the
-> honest line-by-line breakdown before reviewing.
+> **Status — read this first.** Authentication, the catalog backend (browsing, faceted search,
+> suggestions, reviews, image upload), rate limiting and the customer-facing UI for all of it are
+> built and tested. The UI currently ships two candidate visual themes behind a toggle while one is
+> chosen. See [Project status](#project-status) for the honest line-by-line breakdown before reviewing.
 
 ---
 
@@ -29,7 +31,7 @@ resolve dependencies); subsequent runs are cached.
 | | URL |
 |---|---|
 | App | <http://localhost:5173> |
-| API | <http://localhost:8080> |
+| API | <http://localhost:8080> (this machine only; other devices use the app URL) |
 | MailHog (catches all outbound dev email) | <http://localhost:8025> |
 | Postgres | `localhost:5432` |
 | Redis | `localhost:6379` |
@@ -49,8 +51,26 @@ development.
 
 ## Usage guide
 
-A walkthrough of everything currently working. All of it can be driven from `curl`; the API is
-also reachable through the app origin at `http://localhost:5173` (see [Request flow](#request-flow)).
+A walkthrough of everything currently working. Everything below works in the app at
+<http://localhost:5173>:
+
+| Page | What to try |
+|---|---|
+| `/` | Category tiles and top-rated products. The **DARK / PAPER** button in the header switches theme. |
+| `/catalog` | Facets (category, brand, price band, rating), sort, paging. Filters live in the URL. |
+| `/catalog?q=stanton` | A misspelling: no whole-word match, so it falls back to similar names and says so. |
+| Header search | Type `wal`: suggestions appear after a short pause. Arrow keys and Enter work. |
+| `/catalog/{id}` | Specs in metric and imperial, attributes, reviews; signed in, post a review. |
+| `/register`, `/login` | Client-side validation mirroring the server rules; 2FA step when enabled. |
+| `/account` | Profile from `/auth/me`; set up 2FA with a QR code, backup codes shown once. |
+| `/forgot` → MailHog → `/reset?token=…` | Password reset from the emailed link. |
+
+To see the access-token rule: sign in, open devtools, reload `/account`. Application → Local
+Storage holds only the theme choice, and the Network tab shows one `/auth/refresh` restoring the
+session from the `httpOnly` cookie.
+
+All of it can also be driven from `curl`; the API is reachable through the app origin too (see
+[Request flow](#request-flow)).
 
 ### Register and log in
 
@@ -96,6 +116,41 @@ Off by default so review does not depend on Google keys. Set `RECAPTCHA_ENABLED=
 `RECAPTCHA_SITE_KEY` / `RECAPTCHA_SECRET_KEY` in `.env` to require a verified reCAPTCHA token on
 registration.
 
+### Browse and search the catalog
+
+The database starts with about 60 seeded products, so there is something to browse on a fresh
+clone. Browsing a category and searching are the same endpoint:
+
+```sh
+curl 'http://localhost:8080/categories'                                   # the category tree
+curl 'http://localhost:8080/products?category=chess'                      # Chess and every subcategory
+curl 'http://localhost:8080/products?q=walnut&sort=relevance'             # full-text search, ranked
+curl 'http://localhost:8080/products?q=walnut&brand=old-oak-workshop&minPrice=80&maxPrice=200&minRating=4'
+curl 'http://localhost:8080/search/suggestions?q=stau'                    # search as you type
+```
+
+A query with no whole-word match (`wal`, `stanton`, `clok`) is retried against product names by
+trigram similarity, and the response carries `"approximate": true` so the UI can say so.
+
+Every listing returns one page of products plus **facet counts** for the whole result set:
+categories, brands, price bands and "N stars and up". `sort` is one of `relevance`, `price_asc`,
+`price_desc`, `rating`, `newest`. `minPrice` is inclusive and `maxPrice` exclusive, the same rule the
+price bands use, so a count next to a filter always matches what the filter returns.
+
+### Admin: manage products and images
+
+There is deliberately no API for becoming an admin. Register normally, then promote the account:
+
+```sh
+docker compose exec postgres psql -U app -d iloveshopping \
+  -c "UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com'"
+```
+
+Log in again (the role is read into the new access token), then `POST /products`,
+`PUT /products/{id}`, `DELETE /products/{id}`, `POST /categories`, `POST /brands`, and upload images
+with `curl -F file=@board.jpg http://localhost:8080/products/{id}/images`. Uploaded images appear at
+`http://localhost:5173/images/products/<uuid>.jpg`.
+
 ### Google OAuth
 
 Set `GOOGLE_CLIENT_ID` in `.env`, then `POST /auth/oauth/google` with a Google ID token. An email
@@ -107,7 +162,8 @@ already registered with a password cannot be silently taken over by the OAuth fl
 ## API reference
 
 All request bodies are JSON and validated at the boundary; failures return `400` with a per-field
-error map. Unknown fields are rejected outright (mass-assignment guard).
+error map. Unknown fields are rejected outright (mass-assignment guard). A rate-limited request is
+`429` with a `Retry-After` header (see [Security design](#security-design)).
 
 ### Public
 
@@ -118,17 +174,38 @@ error map. Unknown fields are rejected outright (mass-assignment guard).
 | `POST` | `/auth/2fa/login` | Exchange a 2FA challenge + TOTP code for tokens. |
 | `POST` | `/auth/oauth/google` | Exchange a Google ID token for tokens. |
 | `POST` | `/auth/refresh` | Rotate the refresh cookie, get a new access token. |
-| `POST` | `/auth/forgot-password` | Send a reset email. Always `204`, so it cannot be used to enumerate accounts. |
+| `POST` | `/auth/forgot-password` | Send a reset email. Always `200`, so it cannot be used to enumerate accounts. |
 | `POST` | `/auth/reset-password` | Consume a reset token, set a new password, revoke all sessions. |
+| `GET` | `/categories` | Active category tree, nested. |
+| `GET` | `/brands` | All brands. |
+| `GET` | `/products` | Browse and search: `q`, `category`, `brand` (repeatable), `minPrice`, `maxPrice`, `minRating`, `sort`, `page`, `size` (max 48). Returns items, totals, facet counts and `approximate`. |
+| `GET` | `/products/{id}` | Product detail: breadcrumb, brand, images, attributes, metric and imperial measurements. Inactive products are `404`. |
+| `GET` | `/products/{id}/reviews` | Reviews, newest first, paged. |
+| `GET` | `/search/suggestions` | Up to 8 product names matching a fragment of 2+ characters. |
 
 ### Authenticated (`Authorization: Bearer <access token>`)
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/auth/me` | The caller's id, email, name, role, sign-in method and 2FA state. |
 | `POST` | `/auth/logout` | Blocklist the access token's JTI, destroy the refresh token. |
-| `POST` | `/auth/2fa/setup` | Get an `otpauth://` provisioning URI. |
+| `POST` | `/auth/2fa/setup` | Re-confirm the password, get an `otpauth://` provisioning URI. `409` if 2FA is already on. |
 | `POST` | `/auth/2fa/enable` | Verify a TOTP code, enable 2FA, return backup codes. |
-| `POST` | `/auth/2fa/disable` | Verify a TOTP code, disable 2FA. |
+| `POST` | `/auth/2fa/disable` | Re-confirm the password, disable 2FA. |
+| `POST` | `/products/{id}/reviews` | Post a review (rating 1–5). One per user per product; a second is `409`. |
+| `DELETE` | `/products/{id}/reviews/{reviewId}` | Delete a review. Only its author or an admin; anyone else gets `403`. |
+
+### Admin only (`ADMIN` role)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/products` | Create a product. Metric measurements only; imperial is computed. |
+| `PUT` | `/products/{id}` | Replace a product's writable fields. |
+| `DELETE` | `/products/{id}` | Delete a product, its images (rows and files) and reviews. |
+| `POST` | `/products/{id}/images` | Multipart upload (`file`, optional `altText`, `primary`). JPEG or PNG, max 5 MB. |
+| `DELETE` | `/products/{id}/images/{imageId}` | Remove an image and its file. |
+| `POST` | `/categories` | Create a category, optionally under a `parentId`. |
+| `POST` | `/brands` | Create a brand. |
 
 Errors are shaped consistently by a single `@RestControllerAdvice`:
 
@@ -169,7 +246,22 @@ automatically on startup. Migrations are append-only — a committed `V*.sql` is
 - **`search_vector` is `GENERATED ALWAYS ... STORED`,** so Postgres maintains it on write rather
   than recomputing `to_tsvector` on every query. Costs disk, saves per-query CPU.
 - **`average_rating` and `review_count` are denormalised onto `products`** so that sorting the
-  catalog by rating is an index scan, not an aggregate over `product_reviews`.
+  catalog by rating is an index scan, not an aggregate over `product_reviews`. A **trigger** on
+  `product_reviews` (V6) keeps them true for every writer, including the seed data and psql. It
+  locks the product row in a separate statement before recomputing, because under `READ COMMITTED`
+  that is what lets the second of two simultaneous reviews see the first. `ReviewIT` runs two
+  overlapping transactions to prove it, and fails if the lock step is removed.
+- **Search is weighted and indexed (V5).** The generated `search_vector` gives the name weight A,
+  the description B and attribute values (wood, style) C, so `ts_rank` ranks a name match first. A
+  GIN index serves full-text search, a `pg_trgm` GIN index serves suggestions, and btree indexes
+  cover every foreign key, which Postgres never indexes on its own. `EXPLAIN ANALYZE` over 50,000
+  products shows bitmap index scans on both GIN indexes.
+- **Metric is the source of truth for measurements.** Clients send kilograms and centimetres; the
+  imperial columns are computed on every write, so a product can't weigh 2 kg and 9 lbs at once.
+- **Seed data is a repeatable migration** (`db/seed/R__seed_catalog.sql`), kept apart from the
+  versioned schema. Flyway re-applies it when the file changes, and every insert is an upsert, so
+  the demo catalog can change without a new migration. Production would leave `db/seed` out of
+  `FLYWAY_LOCATIONS`.
 - **A partial unique index** (`uq_categories_root_name WHERE parent_id IS NULL`) enforces unique
   names among root categories while still allowing the same subcategory name under two parents.
 - **Constraints live in the database, not only in DTOs.** Every `@NotBlank` has a `NOT NULL`, every
@@ -203,7 +295,9 @@ implementation so search can move to Elasticsearch in Project 3 without touching
 com.iloveshopping/
 ├── user/       User, UserRepository, UserService
 ├── auth/       JWT, refresh rotation, 2FA, CAPTCHA, OAuth, password reset
-├── catalog/    products, categories, brands, search   (in progress)
+├── catalog/    products, categories, brands, images, reviews
+│   └── search/ SearchService + PostgresSearchService, suggestions
+├── storage/    StorageService + LocalStorageService (the images volume)
 ├── config/     SecurityConfig, PasswordConfig, RestClientConfig, GoogleOAuthConfig
 └── exception/  GlobalExceptionHandler, ErrorResponse
 ```
@@ -275,6 +369,17 @@ sending it back. Port `8080` stays published so the API can also be driven direc
 - **CSRF is disabled deliberately, not carelessly.** State-changing requests carry a `Bearer`
   header, which browsers do not attach automatically, and the one cookie in play is
   `SameSite=Strict` and scoped to `/auth`.
+- **Rate limits, in two layers, in Redis.** Per client IP on login, 2FA login, Google login,
+  register, forgot- and reset-password, and on search and suggestions (a search is six queries).
+  Login is also counted per account, following the OWASP guidance: a strict counter per account
+  *and* IP stops one address guessing one account without locking the real user out anywhere
+  else, and a looser counter per account catches guessing spread over many addresses. A blocked
+  address stops feeding the account counter, a correct password clears both, and a password reset
+  lifts the lockout, so an attacker can never lock someone out for good. Reset emails are capped
+  per address. Each counter is one atomic Lua call (`INCR` plus its expiry).
+- **The client IP is nginx's `X-Real-IP`,** which nginx overwrites, so a client cannot choose its
+  own address. The backend port is published on `127.0.0.1` only, because a backend reachable from
+  the LAN would accept that header from anyone.
 - **Every secret is an environment variable.** No secret is committed; `.env.example` holds names
   and placeholders only.
 
@@ -284,17 +389,22 @@ sending it back. Port `8080` stays published so the API can also be driven direc
 
 ```sh
 cd backend && mvn verify     # unit + integration; Testcontainers needs Docker running
-cd frontend && bun test
+cd frontend && bun run test   # Vitest; plain `bun test` runs Bun's own runner instead
 ```
 
-Integration tests run against **real Postgres and Redis in Testcontainers**, never H2 — H2 lies
+All integration tests share one Postgres and one Redis container through
+`AbstractIntegrationTest`. They run against **real Postgres and Redis in Testcontainers**, never H2 — H2 lies
 about the Postgres-specific features this schema depends on (`JSONB`, `tsvector`, generated
 columns).
 
 | Kind | Covers |
 |---|---|
 | Unit | `JwtServiceTest` (generation, validation, expiry), `TokenStoreServiceTest` (rotation, single-use), `TwoFactorServiceTest`, `PasswordResetServiceTest`, `CaptchaServiceTest`, `GoogleTokenVerifierTest`, `UserServiceTest` |
-| Integration | `AuthControllerIT`, `PasswordResetControllerIT`, `TwoFactorControllerIT` — full Spring context over MockMvc, covering `400`/`401`/`403`/`409` paths, not just happy paths |
+| Unit (catalog) | `ProductRequestValidationTest` (the product data model's rules), `UnitConversionTest`, `ImageProcessorTest` (magic bytes, decompression bomb, stripped payloads), `ReviewServiceTest` (ownership), `PostgresSearchServiceTest` |
+| Integration | `AuthControllerIT`, `PasswordResetControllerIT`, `TwoFactorControllerIT`, `CatalogBrowseIT`, `ProductAdminIT`, `SearchIT` (relevance, facet counts, price bounds, paging, suggestions), `ReviewIT` (including concurrent reviews), `ProductImageIT` — full Spring context over MockMvc, covering `400`/`401`/`403`/`404`/`409` paths, not just happy paths |
+| Rate limits | `RateLimitIT` — per-IP limits and the `429` shape, one address locked out of one account while the owner elsewhere still signs in, distributed guessing hitting the account limit, a blocked address not feeding the account counter, a correct password resetting both |
+| Frontend | Vitest + Testing Library: the validation rules at their boundaries, the login and register forms (messages, disabled while pending, server errors, 429 wait time, 2FA step), and the refresh interceptor (two failing requests share one refresh; a wrong password never triggers one) |
+| Security | `InputValidationIT` — SQL injection into search, sort and filter parameters, LIKE wildcards, oversized strings, deep JSON, mass assignment, script URLs, and hostile uploads (renamed scripts, SVG, truncated files, decompression bombs, path-traversal filenames, polyglot payloads). Every probe must be a 4xx with no SQL, class names or paths in the body |
 | Manual | CAPTCHA, Google OAuth and the 2FA enrolment flow, per the brief |
 
 Gaps are listed honestly under [Project status](#project-status).
@@ -316,23 +426,30 @@ What a reviewer can and cannot exercise today.
 - Password recovery and reset by email, through MailHog
 - Optional user-enabled 2FA with TOTP and backup codes
 - Full schema and ERD for every Project 1 entity
-- Unit + API integration test suites for all of the above
+- Catalog backend: category tree, browsing a category with all its subcategories, product detail
+  with metric and imperial measurements, admin create/update/delete for products, categories and
+  brands
+- Search: weighted full-text relevance, faceted filtering by category, brand, price and rating,
+  sorting by relevance, price, rating and newest, and search-as-you-type suggestions
+- Reviews with a database-maintained average rating
+- Image upload: type checked from the bytes, re-encoded, stored under a generated name, served by nginx
+- About 60 seeded products with reviews, so everything above is demonstrable on a fresh clone
+- Typo and prefix fallback for searches with no whole-word match
+- Rate limiting per IP and per account, with a lockout the real user can always get past
+- `GET /auth/me`
+- Frontend: routing, Redux auth state, access token in a module variable with a single-flight
+  refresh interceptor, session restore on reload, register / login / 2FA / forgot / reset / account
+  pages with client-side validation, catalog with facets and sort, product page with reviews,
+  debounced search suggestions
+- Unit, API integration, security and frontend test suites for all of the above
 - One-command Docker startup
 
 **Not built yet**
 
-- **Catalog domain** — the tables exist; the entities, repositories, services, controllers and
-  their tests do not. No product browsing, no category tree endpoint.
-- **Search** — no `SearchService` implementation, so no faceted search, no autocomplete, no
-  relevance/price/rating sorting. The generated `tsvector` column is in place; the GIN index and
-  `pg_trgm` autocomplete index are still to be added as a migration.
-- **Product image upload and serving** — nginx is configured to serve `/images/`, but nothing
-  writes to the volume yet.
-- **Frontend** — the landing page renders. No auth screens, no Redux store, no Axios interceptor,
-  no React Query wiring, no catalog UI, and no frontend tests.
-- **Security test suite** — `InputValidationTest` (injection probes, oversized payloads, deep JSON,
-  path traversal, mass assignment) is specified but not written.
-- **Seed data** — the catalog is empty, so there is nothing to browse even once the endpoints land.
+- **Visual theme** — two candidates ship behind a header toggle until one is chosen.
+- **Seeded product images** — seed products have no photos until an admin uploads some.
+- **Deleting your own review from the UI** — the API supports it; the page does not offer it yet.
+- **Admin UI** — admin operations are API-only; the dashboard is Project 3.
 
 Planned order of work is in [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md).
 
@@ -355,7 +472,10 @@ Every value is an environment variable, per [12-factor](https://12factor.net). D
 | `GOOGLE_CLIENT_ID` | empty | Google OAuth; the flow is inert until set |
 | `RECAPTCHA_ENABLED` / `RECAPTCHA_SITE_KEY` / `RECAPTCHA_SECRET_KEY` | `false` / empty / empty | CAPTCHA on registration |
 | `TWO_FACTOR_ISSUER` | `i-love-shopping` | Label shown in authenticator apps |
-| `FRONTEND_PORT` / `BACKEND_PORT` | `5173` / `8080` | Published host ports |
+| `IMAGES_DIR` | `/var/app/images` | Where uploaded images are written; the `product_images_data` volume |
+| `FLYWAY_LOCATIONS` | `classpath:db/migration,classpath:db/seed` | Drop `db/seed` to start without the demo catalog |
+| `RATE_LIMIT_ENABLED` | `true` | Per-IP and per-account rate limits |
+| `FRONTEND_PORT` / `BACKEND_PORT` | `5173` / `8080` | Published host ports (the backend on `127.0.0.1` only) |
 
 A missing required variable fails the application at boot rather than at first use. That is
 intentional.
@@ -388,7 +508,8 @@ current user in the `docker` group.
 ├── docker-compose.yml      postgres, redis, mailhog, backend, frontend
 ├── .env.example            every variable, with placeholders
 ├── backend/                Spring Boot 4 · Java 21
-│   └── src/main/resources/db/migration/   Flyway migrations
+│   ├── src/main/resources/db/migration/   Flyway schema migrations (append-only)
+│   └── src/main/resources/db/seed/        repeatable demo-catalog seed
 ├── frontend/               React 18 · TypeScript · Vite · Bun
 │   └── nginx.conf          SPA fallback, API proxy, image serving
 ├── docs/                   ERD, assignment brief

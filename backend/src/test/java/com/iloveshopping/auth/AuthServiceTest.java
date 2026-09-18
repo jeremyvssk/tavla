@@ -1,9 +1,10 @@
-// Unit tests for AuthService orchestration: timing-equal login, 2FA gating, and refresh reuse detection.
+// Unit tests for AuthService orchestration: timing-equal login, attempt limits, 2FA gating, and refresh reuse detection.
 package com.iloveshopping.auth;
 
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
+import com.iloveshopping.ratelimit.RateLimitExceededException;
 import com.iloveshopping.user.AuthProvider;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
@@ -19,8 +20,10 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -31,8 +34,31 @@ class AuthServiceTest {
     @Mock TokenStoreService tokenStore;
     @Mock GoogleTokenVerifier googleTokenVerifier;
     @Mock TwoFactorService twoFactorService;
+    @Mock AccountThrottle accountThrottle;
 
     @InjectMocks AuthService authService;
+
+    private static final String IP = "203.0.113.7";
+
+    @Test
+    void login_overTheAttemptLimit_isRejectedBeforeThePasswordIsLookedAt() {
+        doThrow(new RateLimitExceededException(60)).when(accountThrottle).checkLogin("ada@example.com", IP);
+
+        assertThatThrownBy(() -> authService.login("ada@example.com", "guess", IP))
+                .isInstanceOf(RateLimitExceededException.class);
+        verifyNoInteractions(userService);
+    }
+
+    @Test
+    void login_correctPassword_clearsTheAttemptCounters() {
+        User user = localUser();
+        when(userService.findByEmail("ada@example.com")).thenReturn(Optional.of(user));
+        when(userService.passwordMatches(user, "right")).thenReturn(true);
+
+        authService.login("ada@example.com", "right", IP);
+
+        verify(accountThrottle).loginSucceeded("ada@example.com", IP);
+    }
 
     @Test
     void login_unknownEmail_stillRunsAPasswordComparison() {
@@ -40,7 +66,7 @@ class AuthServiceTest {
         // in ~100ms, and the difference is a list of everyone registered here.
         when(userService.findByEmail("nobody@example.com")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.login("nobody@example.com", "guess"))
+        assertThatThrownBy(() -> authService.login("nobody@example.com", "guess", IP))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(userService).dummyPasswordCheck("guess");
     }
@@ -52,7 +78,7 @@ class AuthServiceTest {
         google.setAuthProvider(AuthProvider.GOOGLE);
         when(userService.findByEmail("ada@example.com")).thenReturn(Optional.of(google));
 
-        assertThatThrownBy(() -> authService.login("ada@example.com", "guess"))
+        assertThatThrownBy(() -> authService.login("ada@example.com", "guess", IP))
                 .isInstanceOf(InvalidCredentialsException.class);
         verify(userService).dummyPasswordCheck("guess");
         verify(userService, never()).passwordMatches(any(), anyString());
@@ -64,10 +90,11 @@ class AuthServiceTest {
         when(userService.findByEmail("ada@example.com")).thenReturn(Optional.of(user));
         when(userService.passwordMatches(user, "wrong")).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.login("ada@example.com", "wrong"))
+        assertThatThrownBy(() -> authService.login("ada@example.com", "wrong", IP))
                 .isInstanceOf(InvalidCredentialsException.class);
         // One BCrypt comparison on this path too — never two, which would be slower than the miss.
         verify(userService, never()).dummyPasswordCheck(anyString());
+        verify(accountThrottle, never()).loginSucceeded(anyString(), anyString());
     }
 
     @Test

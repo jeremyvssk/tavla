@@ -170,7 +170,7 @@ public class UserService {
      * user who capitalises their address on a phone keyboard owning a second, unreachable account.
      * The DB enforces the same rule with a unique index on lower(email) — see V4.
      */
-    static String normalizeEmail(String email) {
+    public static String normalizeEmail(String email) {
         return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 }

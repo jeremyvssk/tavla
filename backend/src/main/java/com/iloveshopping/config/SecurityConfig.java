@@ -2,6 +2,7 @@
 package com.iloveshopping.config;
 
 import com.iloveshopping.auth.JwtAuthenticationFilter;
+import com.iloveshopping.ratelimit.RateLimitFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +20,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, RateLimitFilter rateLimitFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
     @Bean
@@ -39,11 +42,26 @@ public class SecurityConfig {
                                 "/auth/register", "/auth/login", "/auth/refresh", "/auth/oauth/google",
                                 "/auth/forgot-password", "/auth/reset-password", "/auth/2fa/login")
                         .permitAll()
+                        // Catalog: anyone may read. Order matters, first match wins.
+                        .requestMatchers(HttpMethod.GET,
+                                "/products", "/products/**", "/categories", "/categories/**",
+                                "/brands", "/brands/**", "/search/**")
+                        .permitAll()
+                        // Reviews are written by any signed-in user; ReviewService checks ownership on delete.
+                        .requestMatchers(HttpMethod.POST, "/products/*/reviews").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/products/*/reviews/*").authenticated()
+                        // Every other catalog write is admin-only. Written as one path rule, so a new
+                        // write endpoint under these paths is protected before anyone remembers to.
+                        .requestMatchers("/products", "/products/**", "/categories", "/categories/**",
+                                "/brands", "/brands/**")
+                        .hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(unauthorizedEntryPoint())
                         .accessDeniedHandler(forbiddenHandler()))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // Over-limit requests are turned away before any token parsing or password hashing.
+                .addFilterBefore(rateLimitFilter, JwtAuthenticationFilter.class);
         return http.build();
     }
 
