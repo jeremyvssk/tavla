@@ -4,6 +4,7 @@ import { FormEvent, KeyboardEvent, useEffect, useId, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchSuggestions } from '../api/catalog';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import Icon from './Icon';
 
 // The backend returns nothing under two characters, so there is no point asking.
 const MIN_LENGTH = 2;
@@ -11,7 +12,7 @@ const MIN_LENGTH = 2;
 // which keeps an active shopper far under the 120-per-minute limit on /search/suggestions.
 const DEBOUNCE_MS = 250;
 
-export default function SearchBox() {
+export default function SearchBox({ onPointerEnter }: { onPointerEnter?: () => void }) {
   const [searchParams] = useSearchParams();
   const [text, setText] = useState(searchParams.get('q') ?? '');
   const [open, setOpen] = useState(false);
@@ -60,11 +61,11 @@ export default function SearchBox() {
   }
 
   return (
-    <form className="search" role="search" onSubmit={submit}>
+    <form className="t-search" role="search" autoComplete="off" onSubmit={submit} onPointerEnter={onPointerEnter}>
+      <Icon name="search" width={2} />
       <input
-        className="search__input"
         type="search"
-        placeholder="Search"
+        placeholder="Search sets, boards, stones, clocks"
         aria-label="Search products"
         role="combobox"
         aria-expanded={visible}
@@ -82,24 +83,32 @@ export default function SearchBox() {
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         onKeyDown={onKeyDown}
       />
-      <ul id={listId} role="listbox" className="search__list" hidden={!visible}>
-        {suggestions.map((s, i) => (
-          <li
-            key={s.id}
-            id={`${listId}-${i}`}
-            role="option"
-            aria-selected={i === active}
-            className="search__option"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setOpen(false);
-              navigate(`/catalog/${s.id}`);
-            }}
-          >
-            {s.name}
-          </li>
-        ))}
-      </ul>
+      {text && (
+        <button className="clr" type="button" aria-label="Clear search" onClick={() => setText('')}>
+          <Icon name="close" width={2} />
+        </button>
+      )}
+      <div className="sg" hidden={!visible}>
+        <ul id={listId} role="listbox" aria-label="Suggestions">
+          {suggestions.map((s, i) => (
+            <li
+              key={s.id}
+              id={`${listId}-${i}`}
+              role="option"
+              aria-selected={i === active}
+              className="row"
+              data-on={i === active ? '' : undefined}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false);
+                navigate(`/catalog/${s.id}`);
+              }}
+            >
+              {s.name}
+            </li>
+          ))}
+        </ul>
+      </div>
     </form>
   );
 }

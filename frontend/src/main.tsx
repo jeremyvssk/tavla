@@ -5,12 +5,8 @@ import ReactDOM from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
-import { initialTheme } from './components/ThemeToggle';
 import './index.css';
 import { store } from './store';
-
-// Set before the first paint so a saved theme doesn't flash the other one.
-document.documentElement.dataset.theme = initialTheme();
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -80,6 +80,16 @@ export interface ProductDetail {
   };
   averageRating: number | null;
   reviewCount: number;
+  variants: ProductVariant[];
+}
+
+/** One colour, wood or size of the product; `options` is e.g. { Colour: 'Blue' } or { Size: '19"', Colour: 'Red' }. */
+export interface ProductVariant {
+  id: string;
+  options: Record<string, string>;
+  price: number;
+  inStock: boolean;
+  imageUrl: string | null;
 }
 
 export interface Review {
@@ -100,6 +110,7 @@ export interface Page<T> {
 }
 
 export const SORTS = [
+  { value: 'featured', label: 'Featured' },
   { value: 'relevance', label: 'Relevance' },
   { value: 'newest', label: 'Newest' },
   { value: 'price_asc', label: 'Price, low to high' },

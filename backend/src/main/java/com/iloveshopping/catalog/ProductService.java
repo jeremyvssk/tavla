@@ -5,6 +5,7 @@ import com.iloveshopping.catalog.dto.Measurements;
 import com.iloveshopping.catalog.dto.ProductDetail;
 import com.iloveshopping.catalog.dto.ProductImageResponse;
 import com.iloveshopping.catalog.dto.ProductRequest;
+import com.iloveshopping.catalog.dto.ProductVariant;
 import com.iloveshopping.catalog.exception.CatalogNotFoundException;
 import com.iloveshopping.storage.StorageService;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -103,7 +105,31 @@ public class ProductService {
                 new Measurements(p.getWeightKg(), p.getWidthCm(), p.getHeightCm(), p.getDepthCm(),
                         p.getWeightLbs(), p.getWidthIn(), p.getHeightIn(), p.getDepthIn()),
                 p.getAverageRating(), p.getReviewCount() == null ? 0 : p.getReviewCount(),
-                p.getCreatedAt(), p.getUpdatedAt());
+                p.getCreatedAt(), p.getUpdatedAt(), variants(p));
+    }
+
+    /**
+     * Siblings in the product's variant group, this product included, so the page can mark the
+     * current option. The seed writes attributes.variant_group and attributes.variant ({"Colour": "Blue"});
+     * a product without a group has no variants.
+     */
+    private List<ProductVariant> variants(Product p) {
+        Map<String, Object> attrs = p.getAttributes();
+        if (attrs == null || !(attrs.get("variant_group") instanceof String group)) {
+            return List.of();
+        }
+        return productRepository.findActiveVariants(group).stream()
+                .filter(v -> v.getAttributes().get("variant") instanceof Map<?, ?>)
+                .map(v -> new ProductVariant(v.getId(), castOptions(v.getAttributes().get("variant")), v.getPrice(),
+                        v.getStockQuantity() > 0,
+                        imageRepository.findByProductIdOrderByPrimaryDescDisplayOrderAscIdAsc(v.getId()).stream()
+                                .findFirst().map(ProductImage::getUrl).orElse(null)))
+                .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castOptions(Object options) {
+        return (Map<String, Object>) options;
     }
 
     static CatalogNotFoundException notFound() {

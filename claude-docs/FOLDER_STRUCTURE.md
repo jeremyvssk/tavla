@@ -16,6 +16,8 @@ i-love-shopping1/
 │   └── i-love-shopping-erd.png
 ├── claude-docs/                 # design + build notes (this file, BUILD_ORDER, validation)
 ├── homework/                    # study material and learning plan
+├── tools/catalog-import/        # supplier scrapers + build_seed.py, which generates
+│                                # db/seed/R__seed_catalog.sql (raw scrapes in data/, gitignored)
 ├── .claude/skills/              # see .claude/skills/README.md
 │
 ├── backend/
@@ -44,7 +46,7 @@ i-love-shopping1/
 │       ├── application.yml
 │       ├── db/migration/        # V1__initial_schema … V4__case_insensitive_email_unique,
 │       │                        # V5__catalog_search_indexes, V6__product_rating_trigger
-│       └── db/seed/             # R__seed_catalog (repeatable demo catalog)
+│       └── db/seed/             # R__seed_catalog (repeatable demo catalog, generated)
 │   └── src/test/java/com/iloveshopping/
 │       ├── auth/                # JwtServiceTest, TokenStoreServiceTest, TwoFactorServiceTest,
 │       │                        # PasswordResetServiceTest, CaptchaServiceTest,

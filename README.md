@@ -1,8 +1,9 @@
 # i-love-shopping
 
-A B2C e-commerce platform. The demo catalog is **chess sets and strategy games**: sets, boards,
-pieces, clocks, go and backgammon. The final niche is still open; nothing in the code depends on
-it except the seed data.
+A B2C e-commerce platform. The demo catalog is **chess, Go and backgammon**: about 1,770 real
+products (sets, boards, pieces, clocks, chess books, Go equipment, backgammon sets) imported from
+three suppliers that sell to resellers; see [tools/catalog-import](tools/catalog-import/README.md).
+Nothing in the code depends on the niche except the seed data.
 
 Built in three projects. **This repository is Project 1 (Foundation):** secure user accounts, a
 relational database designed for growth, and the product catalog that Projects 2 (Commerce) and
@@ -11,8 +12,8 @@ relational database designed for growth, and the product catalog that Projects 2
 
 > **Status — read this first.** Authentication, the catalog backend (browsing, faceted search,
 > suggestions, reviews, image upload), rate limiting and the customer-facing UI for all of it are
-> built and tested. The UI currently ships two candidate visual themes behind a toggle while one is
-> chosen. See [Project status](#project-status) for the honest line-by-line breakdown before reviewing.
+> built and tested. The UI uses one visual theme, Tavla. A cart exists in the browser only; checkout
+> and payment are Project 2. See [Project status](#project-status) for the honest line-by-line breakdown before reviewing.
 
 ---
 
@@ -56,8 +57,8 @@ A walkthrough of everything currently working. Everything below works in the app
 
 | Page | What to try |
 |---|---|
-| `/` | Category tiles and top-rated products. The **DARK / PAPER** button in the header switches theme. |
-| `/catalog` | Facets (category, brand, price band, rating), sort, paging. Filters live in the URL. |
+| `/` | Hero, category tiles and featured products. |
+| `/catalog` | Facets (category, brand, price band, rating), sort, paging. The category list starts at the four games and opens one level at a time. Filters live in the URL. |
 | `/catalog?q=stanton` | A misspelling: no whole-word match, so it falls back to similar names and says so. |
 | Header search | Type `wal`: suggestions appear after a short pause. Arrow keys and Enter work. |
 | `/catalog/{id}` | Specs in metric and imperial, attributes, reviews; signed in, post a review. |
@@ -66,7 +67,7 @@ A walkthrough of everything currently working. Everything below works in the app
 | `/forgot` → MailHog → `/reset?token=…` | Password reset from the emailed link. |
 
 To see the access-token rule: sign in, open devtools, reload `/account`. Application → Local
-Storage holds only the theme choice, and the Network tab shows one `/auth/refresh` restoring the
+Storage holds only the cart (`tavla.cart`), no token, and the Network tab shows one `/auth/refresh` restoring the
 session from the `httpOnly` cookie.
 
 All of it can also be driven from `curl`; the API is reachable through the app origin too (see
@@ -118,14 +119,14 @@ registration.
 
 ### Browse and search the catalog
 
-The database starts with about 60 seeded products, so there is something to browse on a fresh
-clone. Browsing a category and searching are the same endpoint:
+The database starts with about 1,770 seeded products, with photos and reviews, so there is
+something to browse on a fresh clone. Browsing a category and searching are the same endpoint:
 
 ```sh
 curl 'http://localhost:8080/categories'                                   # the category tree
 curl 'http://localhost:8080/products?category=chess'                      # Chess and every subcategory
 curl 'http://localhost:8080/products?q=walnut&sort=relevance'             # full-text search, ranked
-curl 'http://localhost:8080/products?q=walnut&brand=old-oak-workshop&minPrice=80&maxPrice=200&minRating=4'
+curl 'http://localhost:8080/products?q=walnut&brand=sunrise-chess-games&minPrice=80&maxPrice=200&minRating=4'
 curl 'http://localhost:8080/search/suggestions?q=stau'                    # search as you type
 ```
 
@@ -133,8 +134,9 @@ A query with no whole-word match (`wal`, `stanton`, `clok`) is retried against p
 trigram similarity, and the response carries `"approximate": true` so the UI can say so.
 
 Every listing returns one page of products plus **facet counts** for the whole result set:
-categories, brands, price bands and "N stars and up". `sort` is one of `relevance`, `price_asc`,
-`price_desc`, `rating`, `newest`. `minPrice` is inclusive and `maxPrice` exclusive, the same rule the
+categories, brands, price bands and "N stars and up". `sort` is one of `featured`, `relevance`,
+`price_asc`, `price_desc`, `rating`, `newest`. Browsing defaults to `featured` (in stock first, then
+products with a photo, then a Bayesian average rating) and a search to `relevance`. `minPrice` is inclusive and `maxPrice` exclusive, the same rule the
 price bands use, so a count next to a filter always matches what the filter returns.
 
 ### Admin: manage products and images
@@ -179,7 +181,7 @@ error map. Unknown fields are rejected outright (mass-assignment guard). A rate-
 | `GET` | `/categories` | Active category tree, nested. |
 | `GET` | `/brands` | All brands. |
 | `GET` | `/products` | Browse and search: `q`, `category`, `brand` (repeatable), `minPrice`, `maxPrice`, `minRating`, `sort`, `page`, `size` (max 48). Returns items, totals, facet counts and `approximate`. |
-| `GET` | `/products/{id}` | Product detail: breadcrumb, brand, images, attributes, metric and imperial measurements. Inactive products are `404`. |
+| `GET` | `/products/{id}` | Product detail: breadcrumb, brand, images, attributes, metric and imperial measurements, and `variants`: the other colours or sizes of the same product. Inactive products are `404`. |
 | `GET` | `/products/{id}/reviews` | Reviews, newest first, paged. |
 | `GET` | `/search/suggestions` | Up to 8 product names matching a fragment of 2+ characters. |
 
@@ -261,7 +263,16 @@ automatically on startup. Migrations are append-only — a committed `V*.sql` is
 - **Seed data is a repeatable migration** (`db/seed/R__seed_catalog.sql`), kept apart from the
   versioned schema. Flyway re-applies it when the file changes, and every insert is an upsert, so
   the demo catalog can change without a new migration. Production would leave `db/seed` out of
-  `FLYWAY_LOCATIONS`.
+  `FLYWAY_LOCATIONS`. The file is generated by `tools/catalog-import` from supplier data; product
+  UUIDs derive from the supplier's own id, so re-importing updates rows in place. Seed photos are
+  hotlinked from the suppliers rather than stored, since a reseller's image licence only lasts as
+  long as the partnership.
+- **Colour and size variants live in `attributes`**, not in their own table. The importer groups
+  supplier listings that are one product in several colours ("King's Chess Set – Small" in five)
+  and writes `variant_group` and `variant` (`{"Colour": "Blue"}`) into each row's JSONB; the
+  detail endpoint returns the active siblings, and the product page shows them as options. Each
+  variant stays a product with its own stock and price, which is how the suppliers sell them. A
+  `product_variants` table would be the next step once admins need to edit groups.
 - **A partial unique index** (`uq_categories_root_name WHERE parent_id IS NULL`) enforces unique
   names among root categories while still allowing the same subcategory name under two parents.
 - **Constraints live in the database, not only in DTOs.** Every `@NotBlank` has a `NOT NULL`, every
@@ -430,10 +441,13 @@ What a reviewer can and cannot exercise today.
   with metric and imperial measurements, admin create/update/delete for products, categories and
   brands
 - Search: weighted full-text relevance, faceted filtering by category, brand, price and rating,
-  sorting by relevance, price, rating and newest, and search-as-you-type suggestions
+  sorting by featured, relevance, price, rating and newest, and search-as-you-type suggestions
 - Reviews with a database-maintained average rating
 - Image upload: type checked from the bytes, re-encoded, stored under a generated name, served by nginx
-- About 60 seeded products with reviews, so everything above is demonstrable on a fresh clone
+- About 1,770 seeded products from real suppliers, with every supplier photo and generated demo
+  reviews, so everything above is demonstrable on a fresh clone
+- Product page photo gallery, and colour/size variants shown as options that switch between
+  sibling products
 - Typo and prefix fallback for searches with no whole-word match
 - Rate limiting per IP and per account, with a lockout the real user can always get past
 - `GET /auth/me`
@@ -441,13 +455,15 @@ What a reviewer can and cannot exercise today.
   refresh interceptor, session restore on reload, register / login / 2FA / forgot / reset / account
   pages with client-side validation, catalog with facets and sort, product page with reviews,
   debounced search suggestions
+- Cart: add from the product page, a side panel with quantity steppers capped at stock, a subtotal
+  and a free-shipping progress bar. Kept in the browser (`localStorage`), not on the server.
 - Unit, API integration, security and frontend test suites for all of the above
 - One-command Docker startup
 
 **Not built yet**
 
-- **Visual theme** — two candidates ship behind a header toggle until one is chosen.
-- **Seeded product images** — seed products have no photos until an admin uploads some.
+- **Checkout and payment** — the cart's Checkout button is disabled until Project 2. Cart prices are
+  the ones shown when each item was added; checkout will re-price them on the server.
 - **Deleting your own review from the UI** — the API supports it; the page does not offer it yet.
 - **Admin UI** — admin operations are API-only; the dashboard is Project 3.
 
@@ -512,6 +528,7 @@ current user in the `docker` group.
 │   └── src/main/resources/db/seed/        repeatable demo-catalog seed
 ├── frontend/               React 18 · TypeScript · Vite · Bun
 │   └── nginx.conf          SPA fallback, API proxy, image serving
+├── tools/catalog-import/   supplier scrapers + the generator for the catalog seed
 ├── docs/                   ERD, assignment brief
 └── claude-docs/            design and build notes
 ```

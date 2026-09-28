@@ -40,10 +40,12 @@ export default function App() {
         <Route
           path="*"
           element={
-            <div className="empty">
-              <p className="label">404</p>
-              <h1 className="title">Nothing here</h1>
-              <Link to="/">Go home</Link>
+            <div className="wrap page">
+              <div className="empty">
+                <p className="t-eyebrow">404</p>
+                <h1>Nothing here</h1>
+                <Link className="btn" to="/">Go home</Link>
+              </div>
             </div>
           }
         />

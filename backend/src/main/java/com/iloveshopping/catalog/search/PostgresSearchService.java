@@ -53,8 +53,21 @@ public class PostgresSearchService implements SearchService {
     private static final String RELEVANCE = "ts_rank(p.search_vector, websearch_to_tsquery('english', :q)) DESC, p.id";
     private static final String FUZZY_RELEVANCE = "word_similarity(:q, p.name) DESC, p.id";
 
+    /**
+     * The default browse order, the one shops call "Featured" or "Recommended". Buyable before
+     * sold out, photographed before not, then rating. We have no sales data yet, so rating is the
+     * popularity signal, and it is a Bayesian average: each product starts as if it already had
+     * three 3.5-star reviews, so one 5-star review does not outrank forty reviews averaging 4.7.
+     */
+    private static final String FEATURED = """
+            (p.stock_quantity > 0) DESC,
+            EXISTS (SELECT 1 FROM product_images i WHERE i.product_id = p.id) DESC,
+            (COALESCE(p.average_rating, 0) * p.review_count + 3.5 * 3) / (p.review_count + 3) DESC,
+            p.created_at DESC, p.id""";
+
     /** The sort allowlist. A value not in this map never reaches the query. */
     private static final Map<String, String> ORDER_BY = Map.of(
+            "featured", FEATURED,
             "relevance", RELEVANCE,
             "price_asc", "p.price ASC, p.id",
             "price_desc", "p.price DESC, p.id",
@@ -274,10 +287,10 @@ public class PostgresSearchService implements SearchService {
                 .list();
     }
 
-    /** Relevance needs a query to rank against; without one, browsing falls back to newest first. */
+    /** Relevance needs a query to rank against; without one, browsing falls back to featured. */
     static String resolveSort(String requested, boolean hasQuery) {
         if (requested == null || ("relevance".equals(requested) && !hasQuery)) {
-            return hasQuery ? "relevance" : "newest";
+            return hasQuery ? "relevance" : "featured";
         }
         return requested;
     }

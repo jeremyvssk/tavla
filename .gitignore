@@ -23,3 +23,7 @@ dist/
 .claude/skills/pick-ui-library/
 .claude/skills/prototype/
 .claude/skills/VENDOR-LICENSE.md
+
+# Raw supplier scrapes; tools/catalog-import rebuilds the seed from them
+tools/catalog-import/data/
+__pycache__/

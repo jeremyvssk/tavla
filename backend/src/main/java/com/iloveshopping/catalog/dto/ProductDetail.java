@@ -24,5 +24,6 @@ public record ProductDetail(
         BigDecimal averageRating,
         int reviewCount,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        List<ProductVariant> variants) {
 }

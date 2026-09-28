@@ -122,9 +122,10 @@ class SearchIT extends CatalogTestSupport {
 
     @Test
     void seededCatalog_findsAttributeValues_throughTheWeightedVector() throws Exception {
-        // The Olympiad set mentions sheesham only inside attributes.wood, not in its name or description.
-        mockMvc.perform(get("/products").param("q", "sheesham"))
+        // Sunrise's large backgammon set says burlwood only inside attributes.board_material,
+        // not in its name or description.
+        mockMvc.perform(get("/products").param("q", "burlwood"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[*].name", hasItem("Olympiad Weighted Staunton Set")));
+                .andExpect(jsonPath("$.items[*].name", hasItem("Backgammon Large - New")));
     }
 }

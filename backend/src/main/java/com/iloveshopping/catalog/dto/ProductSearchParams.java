@@ -24,8 +24,8 @@ public record ProductSearchParams(
         @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal minPrice,
         @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal maxPrice,
         @DecimalMin("1") @DecimalMax("5") BigDecimal minRating,
-        @Pattern(regexp = "^(relevance|price_asc|price_desc|rating|newest)$",
-                message = "must be one of relevance, price_asc, price_desc, rating, newest") String sort,
+        @Pattern(regexp = "^(featured|relevance|price_asc|price_desc|rating|newest)$",
+                message = "must be one of featured, relevance, price_asc, price_desc, rating, newest") String sort,
         @Min(0) @Max(1000) Integer page,
         @Min(1) @Max(48) Integer size) {
 }

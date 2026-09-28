@@ -8,10 +8,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PostgresSearchServiceTest {
 
     @Test
-    void relevance_fallsBackToNewest_whenThereIsNothingToRank() {
+    void relevance_fallsBackToFeatured_whenThereIsNothingToRank() {
         assertThat(PostgresSearchService.resolveSort(null, true)).isEqualTo("relevance");
-        assertThat(PostgresSearchService.resolveSort(null, false)).isEqualTo("newest");
-        assertThat(PostgresSearchService.resolveSort("relevance", false)).isEqualTo("newest");
+        assertThat(PostgresSearchService.resolveSort(null, false)).isEqualTo("featured");
+        assertThat(PostgresSearchService.resolveSort("relevance", false)).isEqualTo("featured");
         assertThat(PostgresSearchService.resolveSort("price_asc", false)).isEqualTo("price_asc");
     }
 
