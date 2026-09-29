@@ -1,6 +1,6 @@
 // Product detail: breadcrumb, photo gallery with a zoom viewer, colour/size variants, specs in both unit systems, paged reviews.
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FormEvent, MouseEvent, PointerEvent, useEffect, useRef, useState } from 'react';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FormEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { fetchProduct, fetchReviews, postReview, ProductDetail, ProductVariant, searchProducts } from '../api/catalog';
 import { toApiError } from '../api/errors';
@@ -381,24 +381,32 @@ function Specs({ product }: { product: ProductDetail }) {
   );
 }
 
-// More from the same shelf, as a row like the home page's.
+// Related products, as a row like the home page's: the same shelf first, then the shelf above it,
+// because a small shelf (a handful of clocks) cannot fill a row on its own.
 function Related({ product }: { product: ProductDetail }) {
   const shelf = product.category;
-  const { data } = useQuery({
-    queryKey: ['products', `category=${shelf.slug}&sort=rating&size=16`],
-    queryFn: () => searchProducts({ category: shelf.slug, sort: 'rating', size: '16' }),
-    staleTime: 5 * 60_000,
+  const parent = product.breadcrumb.length > 1 ? product.breadcrumb[product.breadcrumb.length - 2] : null;
+  const sources = useQueries({
+    queries: [shelf, parent].filter((c) => c !== null).map((c) => ({
+      queryKey: ['products', `category=${c.slug}&sort=rating&size=16`],
+      queryFn: () => searchProducts({ category: c.slug, sort: 'rating', size: '16' }),
+      staleTime: 5 * 60_000,
+    })),
   });
-  // one card per product name, so the colours of this very product don't fill the row
-  const seen = new Set([product.name]);
-  const items = (data?.items ?? []).filter((p) => !seen.has(p.name) && seen.add(p.name)).slice(0, 10);
+  const [near, wide] = sources.map((s) => s.data);
+  // one card per product name, so the colours of this very product don't fill the row; memoised so
+  // the row keeps one array and its motion wiring between renders
+  const items = useMemo(() => {
+    const seen = new Set([product.name]);
+    return [near, wide].flatMap((d) => d?.items ?? []).filter((p) => !seen.has(p.name) && seen.add(p.name)).slice(0, 10);
+  }, [product.name, near, wide]);
   if (!items.length) return null;
   const top = product.breadcrumb[0] ?? shelf;
   return (
     <>
       <div className="t-rule" aria-hidden="true" />
       <div className="wrap">
-        <ProductRow id="rel-h" title={`More ${shelf.name}`} items={items}
+        <ProductRow id="rel-h" title="Related products" items={items}
           more={{ label: <>Shop all<br />{top.name}</>, to: `/catalog?category=${top.slug}` }} />
       </div>
     </>

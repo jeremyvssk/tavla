@@ -37,9 +37,10 @@ public class PostgresSearchService implements SearchService {
 
     /** Price facet bands: min inclusive, max exclusive, the same rule minPrice/maxPrice use. */
     static final List<BigDecimal[]> PRICE_BANDS = List.of(
-            new BigDecimal[]{BigDecimal.ZERO, new BigDecimal("80")},
-            new BigDecimal[]{new BigDecimal("80"), new BigDecimal("200")},
-            new BigDecimal[]{new BigDecimal("200"), null});
+            new BigDecimal[]{BigDecimal.ZERO, new BigDecimal("25")},
+            new BigDecimal[]{new BigDecimal("25"), new BigDecimal("100")},
+            new BigDecimal[]{new BigDecimal("100"), new BigDecimal("250")},
+            new BigDecimal[]{new BigDecimal("250"), null});
 
     static final int[] RATING_THRESHOLDS = {4, 3, 2, 1};
 

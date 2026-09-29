@@ -12,7 +12,7 @@ const MIN_LENGTH = 2;
 // which keeps an active shopper far under the 120-per-minute limit on /search/suggestions.
 const DEBOUNCE_MS = 250;
 
-export default function SearchBox({ onPointerEnter }: { onPointerEnter?: () => void }) {
+export default function SearchBox() {
   const [searchParams] = useSearchParams();
   const [text, setText] = useState(searchParams.get('q') ?? '');
   const [open, setOpen] = useState(false);
@@ -61,7 +61,7 @@ export default function SearchBox({ onPointerEnter }: { onPointerEnter?: () => v
   }
 
   return (
-    <form className="t-search" role="search" autoComplete="off" onSubmit={submit} onPointerEnter={onPointerEnter}>
+    <form className="t-search" role="search" autoComplete="off" onSubmit={submit}>
       <Icon name="search" width={2} />
       <input
         type="search"

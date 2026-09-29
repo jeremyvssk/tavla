@@ -1,12 +1,15 @@
-// Browse and search: every filter, the sort and the page live in the URL, so results are linkable and Back works.
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+// Browse and search: every filter and the sort live in the URL, so results are linkable and Back works.
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CategoryNode, fetchCategories, SearchParams, searchProducts, SORTS } from '../api/catalog';
 import { toApiError } from '../api/errors';
 import Icon, { Star } from '../components/Icon';
 import ProductCard from '../components/ProductCard';
 import { formatBand } from '../lib/format';
+
+/** Products per "Show more": divides evenly into rows of 2, 3 and 4 cards. */
+const BATCH = 36;
 
 /** The path from a top-level game down to `slug`, or [] when it is not in the tree. */
 function chainTo(tree: CategoryNode[], slug: string | undefined): CategoryNode[] {
@@ -24,6 +27,36 @@ function subtree(node: CategoryNode): string[] {
   return [node.slug, ...node.children.flatMap(subtree)];
 }
 
+/** Min and max boxes for a price range of the shopper's own; the arrow (or Enter) applies it. */
+function PriceRange({ min, max, onApply }: {
+  min?: string; max?: string; onApply: (min: string | null, max: string | null) => void;
+}) {
+  const [lo, setLo] = useState(min ?? '');
+  const [hi, setHi] = useState(max ?? '');
+
+  function apply(e: FormEvent) {
+    e.preventDefault();
+    const a = lo === '' ? null : Math.max(0, Number(lo));
+    const b = hi === '' ? null : Math.max(0, Number(hi));
+    // typed the wrong way round: take the two numbers as the range they describe
+    const [from, to] = a !== null && b !== null && a > b ? [b, a] : [a, b];
+    onApply(from === null ? null : String(from), to === null ? null : String(to));
+  }
+
+  return (
+    <form className="pr" onSubmit={apply}>
+      <label><span className="vh">Minimum price</span><i aria-hidden="true">€</i>
+        <input type="number" inputMode="decimal" min={0} step="any" placeholder="Min" value={lo} onChange={(e) => setLo(e.target.value)} />
+      </label>
+      <span aria-hidden="true">–</span>
+      <label><span className="vh">Maximum price</span><i aria-hidden="true">€</i>
+        <input type="number" inputMode="decimal" min={0} step="any" placeholder="Max" value={hi} onChange={(e) => setHi(e.target.value)} />
+      </label>
+      <button type="submit" aria-label="Apply price range"><Icon name="arrow" width={2.2} /></button>
+    </form>
+  );
+}
+
 export default function CatalogPage() {
   const [url, setUrl] = useSearchParams();
   const [sheet, setSheet] = useState(false);
@@ -35,15 +68,19 @@ export default function CatalogPage() {
     maxPrice: url.get('maxPrice') ?? undefined,
     minRating: url.get('minRating') ?? undefined,
     sort: url.get('sort') ?? undefined,
-    page: url.get('page') ?? undefined,
   };
 
-  const { data, error, isPending, isFetching } = useQuery({
+  // "Show more" instead of numbered pages: each batch is appended, and the facets and totals come from the first.
+  const { data: pages, error, isPending, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['products', url.toString()],
-    queryFn: () => searchProducts(params),
+    queryFn: ({ pageParam }) => searchProducts({ ...params, page: String(pageParam), size: String(BATCH) }),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.page + 1 < last.totalPages ? last.page + 1 : undefined),
     // Keep showing the old results while a filter change loads, instead of flashing an empty grid.
     placeholderData: keepPreviousData,
   });
+  const data = pages?.pages[0];
+  const items = pages?.pages.flatMap((p) => p.items) ?? [];
   const { data: tree = [] } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories, staleTime: 5 * 60_000 });
   const path = chainTo(tree, params.category);
   const current = path[path.length - 1];
@@ -53,6 +90,42 @@ export default function CatalogPage() {
     return () => { document.title = 'Tavla · Chess, Go and Backgammon'; };
   }, [params.q, current?.name]);
 
+  // The filter column scrolls on its own. Its height is the room it really has on screen: from where it
+  // sits now (lower than its sticky spot while the page is at the top) down to the window's bottom, or to
+  // the end of the results when those end first. A fixed "window minus header" height let its last rows
+  // hang off the screen at the top of the page and got it pushed up past its top at the end.
+  const side = useRef<HTMLElement>(null);
+  const results = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = side.current, res = results.current;
+    if (!el || !res) return;
+    const wide = matchMedia('(min-width:62.01rem)');
+    let frame = 0;
+    const fit = () => {
+      frame = 0;
+      if (!wide.matches) { el.style.removeProperty('max-height'); return; } // a sheet on narrow screens
+      el.style.setProperty('--sb', `${el.offsetWidth - el.clientWidth}px`); // the scrollbar gutter; 0 for overlay scrollbars
+      const pin = parseFloat(getComputedStyle(el).top) || 0;
+      const top = Math.max(el.getBoundingClientRect().top, pin);
+      const bottom = Math.min(innerHeight - 16, res.getBoundingClientRect().bottom);
+      el.style.maxHeight = `${Math.max(160, bottom - top)}px`;
+    };
+    const queue = () => { if (!frame) frame = requestAnimationFrame(fit); };
+    fit();
+    const ro = new ResizeObserver(queue);
+    ro.observe(res);
+    addEventListener('scroll', queue, { passive: true });
+    addEventListener('resize', queue);
+    wide.addEventListener('change', queue);
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+      removeEventListener('scroll', queue);
+      removeEventListener('resize', queue);
+      wide.removeEventListener('change', queue);
+    };
+  }, []);
+
   useEffect(() => {
     if (!sheet) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSheet(false);
@@ -60,7 +133,7 @@ export default function CatalogPage() {
     return () => removeEventListener('keydown', onKey);
   }, [sheet]);
 
-  /** Applies changes to the URL. Any filter change goes back to page one. */
+  /** Applies changes to the URL; a new URL is a new query, so the list starts again from the first batch. */
   function update(changes: Record<string, string | string[] | null>) {
     const next = new URLSearchParams(url);
     for (const [key, value] of Object.entries(changes)) {
@@ -68,7 +141,7 @@ export default function CatalogPage() {
       if (Array.isArray(value)) value.forEach((v) => next.append(key, v));
       else if (value !== null && value !== '') next.set(key, value);
     }
-    if (!('page' in changes)) next.delete('page');
+    next.delete('page'); // left over from links made when the catalog had numbered pages
     setUrl(next);
   }
 
@@ -86,8 +159,8 @@ export default function CatalogPage() {
     const name = data?.facets.brands.find((b) => b.slug === slug)?.name ?? slug;
     chips.push([name, { brand: (params.brand ?? []).filter((b) => b !== slug) }]);
   }
-  if (params.minPrice) {
-    chips.push([formatBand(Number(params.minPrice), params.maxPrice ? Number(params.maxPrice) : null), { minPrice: null, maxPrice: null }]);
+  if (params.minPrice || params.maxPrice) {
+    chips.push([formatBand(Number(params.minPrice ?? 0), params.maxPrice ? Number(params.maxPrice) : null), { minPrice: null, maxPrice: null }]);
   }
   if (params.minRating) chips.push([`${params.minRating} stars and up`, { minRating: null }]);
 
@@ -103,33 +176,12 @@ export default function CatalogPage() {
 
   return (
     <>
-      <div className="band band--shop">
-        <div className="wrap">
-          <ol className="crumbs" aria-label="Breadcrumb">
-            <li><Link to="/">Home</Link></li>
-            {params.q || current ? <li><Link to="/catalog">Shop</Link></li> : <li><span aria-current="page">Shop</span></li>}
-            {path.map((c, i) => (
-              <li key={c.slug}>
-                {i === path.length - 1 && !params.q
-                  ? <span aria-current="page">{c.name}</span>
-                  : <Link to={`/catalog?category=${c.slug}`}>{c.name}</Link>}
-              </li>
-            ))}
-            {params.q && <li><span aria-current="page">Search</span></li>}
-          </ol>
-          <h1>{title}</h1>
-          {data && (
-            <p className="meta" aria-live="polite">
-              {count} {count === 1 ? 'product' : 'products'}
-              {isFetching && ' · updating'}
-            </p>
-          )}
-        </div>
-      </div>
-
       <div className="wrap sr">
+        <header className="sr-head">
+          <h1>{title}</h1>
+        </header>
         <div className="sf-scrim" data-on={sheet ? '' : undefined} onClick={() => setSheet(false)} />
-        <aside className="sf" id="filters" aria-label="Filters" data-on={sheet ? '' : undefined}>
+        <aside className="sf" id="filters" ref={side} aria-label="Filters" data-on={sheet ? '' : undefined}>
           <div className="sf-head">
             <h2>Filters</h2>
             <button type="button" aria-label="Close filters" onClick={() => setSheet(false)}><Icon name="close" width={2} /></button>
@@ -167,7 +219,10 @@ export default function CatalogPage() {
 
                 <section className="fg">
                   <h2>Price</h2>
-                  <div className="pills">
+                  {/* keyed on the URL so Back, a chip or a band button refills the boxes */}
+                  <PriceRange key={`${params.minPrice}-${params.maxPrice}`} min={params.minPrice} max={params.maxPrice}
+                    onApply={(minPrice, maxPrice) => update({ minPrice, maxPrice })} />
+                  <div className="pills pills--2">
                     {data.facets.prices.map((band) => {
                       const min = String(band.min);
                       const max = band.max === null ? null : String(band.max);
@@ -175,8 +230,9 @@ export default function CatalogPage() {
                       return (
                         <button key={min} type="button" className="pill" aria-pressed={on}
                           disabled={band.count === 0 && !on}
+                          aria-label={`${formatBand(band.min, band.max)}, ${band.count} products`}
                           onClick={() => update(on ? { minPrice: null, maxPrice: null } : { minPrice: min, maxPrice: max })}>
-                          {formatBand(band.min, band.max)}<small>{band.count}</small>
+                          {formatBand(band.min, band.max)}
                         </button>
                       );
                     })}
@@ -201,14 +257,15 @@ export default function CatalogPage() {
 
                 <section className="fg">
                   <h2>Rating</h2>
-                  <div className="pills">
+                  <div className="pills pills--2">
                     {data.facets.ratings.map((r) => {
                       const on = params.minRating === String(r.minRating);
                       return (
                         <button key={r.minRating} type="button" className="pill" aria-pressed={on}
                           disabled={r.count === 0 && !on}
+                          aria-label={`${r.minRating} stars and up, ${r.count} products`}
                           onClick={() => update({ minRating: on ? null : String(r.minRating) })}>
-                          <Star />{r.minRating}+<small>{r.count}</small>
+                          <Star />{r.minRating}+
                         </button>
                       );
                     })}
@@ -225,13 +282,16 @@ export default function CatalogPage() {
           </div>
         </aside>
 
-        <section className="res" aria-label="Results">
+        <section className="res" aria-label="Results" ref={results}>
           <div className="tb">
             <button className="fbtn" type="button" aria-controls="filters" aria-expanded={sheet} onClick={() => setSheet(true)}>
               <Icon name="sliders" width={2} />Filters
               {chips.length > 0 && <span className="t-cnt">{chips.length}</span>}
             </button>
             <div className="chips">
+              {chips.length === 0 && data && count > 0 && (
+                <span className="shown" aria-live="polite">{count} {count === 1 ? 'product' : 'products'}</span>
+              )}
               {chips.map(([label, change]) => (
                 <button key={label} type="button" className="chip" aria-label={`Remove filter: ${label}`} onClick={() => update(change)}>
                   {label}<Icon name="close" width={2.4} />
@@ -264,21 +324,17 @@ export default function CatalogPage() {
             </div>
           )}
           <div className="rg">
-            {data?.items.map((p) => <ProductCard key={p.id} product={p} />)}
+            {items.map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
 
-          {data && data.totalPages > 1 && (
-            <nav className="pager" aria-label="Pages">
-              <button type="button" className="btn btn--ghost" disabled={data.page === 0}
-                onClick={() => update({ page: String(data.page - 1) })}>
-                <Icon name="left" width={2} />Previous
+          {data && count > items.length && (
+            <div className="more">
+              <p>Showing {items.length} of {count}</p>
+              <progress max={count} value={items.length} aria-hidden="true" />
+              <button type="button" className="btn btn--ghost" disabled={!hasNextPage || isFetchingNextPage} onClick={() => fetchNextPage()}>
+                {isFetchingNextPage ? 'Loading…' : 'Show more products'}
               </button>
-              <span className="pager__status">Page {data.page + 1} of {data.totalPages}</span>
-              <button type="button" className="btn btn--ghost" disabled={data.page + 1 >= data.totalPages}
-                onClick={() => update({ page: String(data.page + 1) })}>
-                Next<Icon name="arrow" width={2} />
-              </button>
-            </nav>
+            </div>
           )}
         </section>
       </div>

@@ -21,8 +21,10 @@ function bezier(x1: number, y1: number, x2: number, y2: number) {
     return Y((lo + hi) / 2);
   };
 }
-const IN_OUT = bezier(0.65, 0, 0.25, 1);
-const STEP_MS = 640;
+// ease-out rather than in-out: a click gets movement on the very next frame, and a second click
+// mid-glide carries on at speed instead of stalling at a slow start
+const OUT = bezier(0.22, 1, 0.36, 1);
+const STEP_MS = 480;
 const STAGGER = 10;
 
 interface Props {
@@ -39,8 +41,8 @@ export default function ProductRow({ id, title, items, more }: Props) {
   const nextRef = useRef<HTMLButtonElement>(null);
 
   // The motion runs on the DOM directly: it is per-frame work that React state would only slow down.
-  // Arrows step by whole cards on an in-out curve, the cards trailing a few ms apart so the row moves
-  // like a strip. A mouse can grab and flick the row; it coasts and stops where it runs out, with no
+  // Arrows step by whole cards on an ease-out curve, the cards trailing a few ms apart so the row moves
+  // like a strip; clicks during a glide stack up from where it was heading. A mouse can grab and flick the row; it coasts and stops where it runs out, with no
   // snapping. Touch keeps the browser's own scrolling, whose inertia is better than anything here.
   useEffect(() => {
     const track = trackRef.current!, rail = railRef.current!, prev = prevRef.current!, next = nextRef.current!;
@@ -48,6 +50,9 @@ export default function ProductRow({ id, title, items, more }: Props) {
     const cards = [...track.children] as HTMLElement[];
     const still = matchMedia('(prefers-reduced-motion:reduce)');
     let raf = 0;
+    // where the running glide will stop, and each card's current trailing offset in px
+    let target: number | null = null;
+    const off = cards.map(() => 0);
     const max = () => track.scrollWidth - track.clientWidth;
     const pitch = () => (cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : track.clientWidth);
     const clamp = (x: number) => Math.max(0, Math.min(max(), x));
@@ -61,15 +66,20 @@ export default function ProductRow({ id, title, items, more }: Props) {
       rail.style.setProperty('--tw', `${tw}px`);
       rail.style.setProperty('--tx', `${m > 0 ? Math.min(1, x / m) * (rail.clientWidth - tw) : 0}px`);
     };
-    const settle = () => cards.forEach((c) => { c.style.transform = ''; });
-    const stop = () => { cancelAnimationFrame(raf); raf = 0; settle(); };
+    const settle = () => { off.fill(0); cards.forEach((c) => { c.style.transform = ''; }); };
+    const stop = () => { cancelAnimationFrame(raf); raf = 0; target = null; settle(); };
 
-    // Each card runs the track's curve from its own start time, shifted by how far it trails.
+    // Each card runs the track's curve from its own start time, shifted by how far it trails. A glide
+    // that interrupts another takes over the cards' trailing offsets and eases them out, so nothing jumps.
     const glide = (to: number, stagger: boolean) => {
-      stop();
-      const from = track.scrollLeft, dist = clamp(to) - from;
-      if (Math.abs(dist) < 1) return;
-      if (still.matches) { track.scrollLeft = from + dist; return; }
+      cancelAnimationFrame(raf);
+      const from = track.scrollLeft, end = clamp(to), dist = end - from, carried = off.slice();
+      if (still.matches || (Math.abs(dist) < 1 && carried.every((o) => Math.abs(o) < 0.5))) {
+        stop();
+        track.scrollLeft = end;
+        return;
+      }
+      target = end;
       const d = Math.sign(dist), step = pitch(), seen = Math.max(1, Math.round(track.clientWidth / step));
       const delay = cards.map((c) => {
         const slot = Math.floor((c.offsetLeft - from) / step);
@@ -78,19 +88,22 @@ export default function ProductRow({ id, title, items, more }: Props) {
       const total = STEP_MS + Math.max(...delay), t0 = performance.now();
       const tick = (now: number) => {
         const t = now - t0;
-        const at = (p: number) => from + dist * IN_OUT(Math.max(0, Math.min(1, p)));
-        const lead = at(t / STEP_MS);
+        const at = (p: number) => from + dist * OUT(Math.max(0, Math.min(1, p)));
+        const lead = at(t / STEP_MS), fade = 1 - OUT(Math.min(1, t / STEP_MS));
         track.scrollLeft = lead;
-        cards.forEach((c, k) => { c.style.transform = delay[k] ? `translateX(${(lead - at((t - delay[k]) / STEP_MS)).toFixed(1)}px)` : ''; });
+        cards.forEach((c, k) => {
+          off[k] = (delay[k] ? lead - at((t - delay[k]) / STEP_MS) : 0) + carried[k] * fade;
+          c.style.transform = Math.abs(off[k]) > 0.05 ? `translateX(${off[k].toFixed(1)}px)` : '';
+        });
         if (t < total) raf = requestAnimationFrame(tick);
-        else { raf = 0; settle(); }
+        else { raf = 0; target = null; settle(); }
       };
       raf = requestAnimationFrame(tick);
     };
 
     const onArrow = (dir: number) => () => {
       const step = pitch(), per = Math.max(1, Math.floor((track.clientWidth + 1) / step));
-      glide((Math.round(track.scrollLeft / step) + dir * per) * step, true);
+      glide((Math.round((target ?? track.scrollLeft) / step) + dir * per) * step, true);
     };
     const onPrev = onArrow(-1), onNext = onArrow(1);
     prev.addEventListener('click', onPrev);

@@ -308,7 +308,7 @@ curl -i -X POST http://localhost:8080/auth/login \
 curl -i -X POST http://localhost:8080/auth/refresh -b 'refresh_token=<cookie value>'
 
 # search
-curl 'http://localhost:8080/products?q=walnut&minPrice=80&maxPrice=200&sort=price_asc'
+curl 'http://localhost:8080/products?q=walnut&minPrice=25&maxPrice=100&sort=price_asc'
 ```
 
 Main endpoints:

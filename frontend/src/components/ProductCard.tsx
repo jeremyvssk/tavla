@@ -1,4 +1,4 @@
-// One product tile in a listing or a row: photo on the ash well, name, brand, price and rating.
+// One product card in a listing or a row: photo on the white card, name, brand, price and rating.
 import { Link } from 'react-router-dom';
 import type { ProductSummary } from '../api/catalog';
 import { formatPrice } from '../lib/format';
@@ -16,7 +16,8 @@ export default function ProductCard({ product }: { product: ProductSummary }) {
         )}
       </div>
       {/* the link's ::after covers the whole card, so the photo is a click target too */}
-      <h3><Link to={`/catalog/${product.id}`} draggable={false}>{product.name}</Link></h3>
+      {/* long names stop at two lines, so prices line up across a row; the full name is the tooltip */}
+      <h3 title={product.name}><Link to={`/catalog/${product.id}`} draggable={false}>{product.name}</Link></h3>
       <p className="br">{product.brandName ?? 'Tavla'}</p>
       <div className="ft">
         <span className="pz">{formatPrice(product.price)}</span>

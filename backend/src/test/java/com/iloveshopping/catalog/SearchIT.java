@@ -37,9 +37,9 @@ class SearchIT extends CatalogTestSupport {
         int b = createBrand(admin, "Brand B " + s, brandB);
 
         // One product has the word in its name, one only in its description: the name must rank first.
-        createProduct(admin, token + " Board", "A plain board.", "80.00", category, a);
-        createProduct(admin, "Plain Pieces", "Pairs well with any " + token + " you own.", "150.00", category, a);
-        createProduct(admin, "Other Clock", "Nothing to see here.", "200.00", category, b);
+        createProduct(admin, token + " Board", "A plain board.", "25.00", category, a);
+        createProduct(admin, "Plain Pieces", "Pairs well with any " + token + " you own.", "90.00", category, a);
+        createProduct(admin, "Other Clock", "Nothing to see here.", "100.00", category, b);
     }
 
     @Test
@@ -79,20 +79,21 @@ class SearchIT extends CatalogTestSupport {
                 // Brand A is ticked, but Brand B still shows its real count rather than 0.
                 .andExpect(jsonPath("$.facets.brands[?(@.slug == '" + brandA + "')].count", contains(2)))
                 .andExpect(jsonPath("$.facets.brands[?(@.slug == '" + brandB + "')].count", contains(1)))
-                // Price counts do obey the brand filter: only Brand A's 80 and 150 products.
+                // Price counts do obey the brand filter: only Brand A's 25 and 90 products.
                 .andExpect(jsonPath("$.facets.prices[0].count").value(0))
                 .andExpect(jsonPath("$.facets.prices[1].count").value(2))
-                .andExpect(jsonPath("$.facets.prices[2].count").value(0));
+                .andExpect(jsonPath("$.facets.prices[2].count").value(0))
+                .andExpect(jsonPath("$.facets.prices[3].count").value(0));
     }
 
     @Test
     void priceFilter_minIsInclusive_maxIsExclusive_likeTheFacetBands() throws Exception {
         mockMvc.perform(get("/products").param("category", categorySlug)
-                        .param("minPrice", "80").param("maxPrice", "200").param("sort", "price_asc"))
+                        .param("minPrice", "25").param("maxPrice", "100").param("sort", "price_asc"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalItems").value(2))
-                .andExpect(jsonPath("$.items[0].price").value(80.00))
-                .andExpect(jsonPath("$.items[1].price").value(150.00));
+                .andExpect(jsonPath("$.items[0].price").value(25.00))
+                .andExpect(jsonPath("$.items[1].price").value(90.00));
     }
 
     @Test
@@ -103,7 +104,7 @@ class SearchIT extends CatalogTestSupport {
                 .andExpect(jsonPath("$.totalItems").value(3))
                 .andExpect(jsonPath("$.totalPages").value(3))
                 .andExpect(jsonPath("$.items.length()").value(1))
-                .andExpect(jsonPath("$.items[0].price").value(150.00));
+                .andExpect(jsonPath("$.items[0].price").value(90.00));
     }
 
     @Test

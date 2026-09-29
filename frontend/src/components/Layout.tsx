@@ -1,7 +1,7 @@
-// Page chrome: delivery line, top bar with game menus, search and account, phone drawer, footer.
+// Page chrome: delivery line, top bar with game links, search and account, phone drawer, footer.
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom';
 import { CategoryNode, fetchCategories } from '../api/catalog';
 import { endSession } from '../auth/session';
 import { useAppDispatch, useAppSelector } from '../store';
@@ -10,10 +10,13 @@ import CartPanel from './CartPanel';
 import Icon, { Perks } from './Icon';
 import SearchBox from './SearchBox';
 
+/** Scroll position per history entry (location.key), so Back lands where the shopper left off. */
+const scrollByEntry = new Map<string, number>();
+
 const GAMES = [
-  { slug: 'chess', name: 'Chess', promo: 'chess-sets' },
-  { slug: 'go', name: 'Go', promo: 'go' },
-  { slug: 'backgammon', name: 'Backgammon', promo: 'backgammon' },
+  { slug: 'chess', name: 'Chess' },
+  { slug: 'go', name: 'Go' },
+  { slug: 'backgammon', name: 'Backgammon' },
 ];
 
 /** The top-level game a category belongs to, so the bar can mark it. */
@@ -31,8 +34,6 @@ export default function Layout() {
   const [params] = useSearchParams();
   const { data: tree = [] } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories, staleTime: 5 * 60_000 });
   const [menu, setMenu] = useState(false);
-  const [mega, setMega] = useState<string | null>(null);
-  const megaTimer = useRef<number>();
   const shell = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLElement>(null);
   const ann = useRef<HTMLDivElement>(null);
@@ -60,13 +61,39 @@ export default function Layout() {
   // A route change closes whatever was open over the page.
   useEffect(() => {
     setMenu(false);
-    setMega(null);
     dispatch(cartClosed());
   }, [location.pathname, location.search, dispatch]);
 
-  // A new page starts at its top; a filter change on the same page keeps the scroll position.
+  // Scrolling is recorded as it happens, not on leaving: by the time a route change runs any effect the
+  // next page is already rendered, and a shorter page has already clamped scrollY.
   useEffect(() => {
-    scrollTo(0, 0);
+    history.scrollRestoration = 'manual';
+    const key = location.key;
+    const save = () => scrollByEntry.set(key, scrollY);
+    addEventListener('scroll', save, { passive: true });
+    return () => removeEventListener('scroll', save);
+  }, [location.key]);
+
+  // A new page starts at its top; Back or Forward returns to where that page was left; a filter change
+  // on the same page keeps the scroll position.
+  const navType = useNavigationType();
+  useLayoutEffect(() => {
+    const y = navType === 'POP' ? scrollByEntry.get(location.key) : undefined;
+    if (!y) { scrollTo(0, 0); return; }
+    // The page may still be growing (results arriving, the header measuring itself): retry each frame
+    // until it is tall enough to reach y, for up to a second, or until the shopper scrolls themselves.
+    let frame = 0;
+    const until = performance.now() + 1000;
+    const stop = () => cancelAnimationFrame(frame);
+    const go = () => {
+      scrollTo(0, y);
+      if (Math.abs(scrollY - y) > 1 && performance.now() < until) frame = requestAnimationFrame(go);
+    };
+    const input = ['wheel', 'touchstart', 'keydown'] as const;
+    input.forEach((e) => addEventListener(e, stop, { passive: true }));
+    go();
+    return () => { stop(); input.forEach((e) => removeEventListener(e, stop)); };
+    // only a new page moves the scroll; the location key and navigation type are read, not watched
   }, [location.pathname]);
 
   useEffect(() => {
@@ -77,62 +104,33 @@ export default function Layout() {
     return () => removeEventListener('keydown', onKey);
   }, [menu]);
 
-  useEffect(() => {
-    if (!mega) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMega(null);
-    addEventListener('keydown', onKey);
-    return () => removeEventListener('keydown', onKey);
-  }, [mega]);
-
-  // Hover intent: a short wait before the first menu drops, none when moving between games.
-  function openMega(slug: string) {
-    clearTimeout(megaTimer.current);
-    if (mega) setMega(slug);
-    else megaTimer.current = window.setTimeout(() => setMega(slug), 90);
-  }
-  function closeMega(delay = 140) {
-    clearTimeout(megaTimer.current);
-    megaTimer.current = window.setTimeout(() => setMega(null), delay);
-  }
-
   async function signOut() {
     await endSession(dispatch);
     navigate('/');
   }
-
-  // the last menu stays rendered while the panel fades out, so it doesn't empty mid-fade
-  const shownMega = useRef<string | null>(null);
-  if (mega) shownMega.current = mega;
-  const game = GAMES.find((g) => g.slug === shownMega.current);
-  const megaNode = tree.find((n) => n.slug === shownMega.current);
 
   return (
     <div className="t" ref={shell}>
       <div className="ann" ref={ann}>
         <div className="wrap"><Perks /></div>
       </div>
-      <header className="t-bar" ref={bar} onPointerLeave={(e) => e.pointerType === 'mouse' && closeMega()}
-        onPointerEnter={(e) => e.pointerType === 'mouse' && mega && clearTimeout(megaTimer.current)}>
+      <header className="t-bar" ref={bar}>
         <div className="wrap">
           <button className="t-burger" type="button" aria-label="Open menu" aria-expanded={menu}
             aria-controls="drawer" onClick={() => setMenu(true)}>
             <Icon name="menu" width={2} />
           </button>
-          <Link className="t-logo" to="/" aria-label="Tavla, home" onPointerEnter={() => mega && closeMega()}>Tavla</Link>
+          <Link className="t-logo" to="/" aria-label="Tavla, home">Tavla</Link>
           <nav className="t-nav" aria-label="Games">
             {GAMES.map((g) => (
               <Link key={g.slug} to={`/catalog?category=${g.slug}`}
-                aria-expanded={mega === g.slug} aria-controls="mm"
-                aria-current={current === g.slug ? 'true' : undefined}
-                onPointerEnter={(e) => e.pointerType === 'mouse' && openMega(g.slug)}
-                onFocus={() => matchMedia('(hover:hover) and (pointer:fine)').matches && setMega(g.slug)}>
+                aria-current={current === g.slug ? 'true' : undefined}>
                 {g.name}
-                <Icon name="down" width={2.2} />
               </Link>
             ))}
           </nav>
-          <SearchBox onPointerEnter={() => mega && closeMega()} />
-          <div className="t-acts" onPointerEnter={() => mega && closeMega()}>
+          <SearchBox />
+          <div className="t-acts">
             {status === 'authenticated' ? (
               <>
                 <NavLink to="/account" className="t-act" aria-label="Account">
@@ -159,12 +157,6 @@ export default function Layout() {
               <span className="lbl">Cart</span>
             </button>
           </div>
-        </div>
-        <div className="mm" id="mm" role="region" aria-label="Browse" data-on={mega && megaNode ? '' : undefined}
-          aria-hidden={!mega}
-          onPointerEnter={() => clearTimeout(megaTimer.current)}
-          onClick={(e) => (e.target as HTMLElement).closest('a') && setMega(null)}>
-          {megaNode && game && <MegaMenu node={megaNode} promo={game.promo} />}
         </div>
       </header>
       {user && <p className="vh">Signed in as {user.email}</p>}
@@ -251,34 +243,3 @@ export default function Layout() {
   );
 }
 
-// Shelves with sub-shelves become columns; single shelves share one "Shop by type" column.
-function MegaMenu({ node, promo }: { node: CategoryNode; promo: string }) {
-  const deep = node.children.filter((c) => c.children.length);
-  const leafy = node.children.filter((c) => !c.children.length);
-  const link = (c: CategoryNode) => (
-    <li key={c.slug}><Link to={`/catalog?category=${c.slug}`}>{c.name}</Link></li>
-  );
-  return (
-    <div className="wrap">
-      <div className="mm-cols">
-        {deep.map((c) => (
-          <div className="mm-col" key={c.slug}>
-            <h3><Link to={`/catalog?category=${c.slug}`}>{c.name}</Link></h3>
-            <ul>{c.children.map(link)}</ul>
-          </div>
-        ))}
-        {leafy.length > 0 && (
-          <div className="mm-col">
-            <h3>{deep.length ? 'More' : 'Shop by type'}</h3>
-            <ul>{leafy.map(link)}</ul>
-          </div>
-        )}
-      </div>
-      <Link className="mm-promo" to={`/catalog?category=${node.slug}`}>
-        <img src={`/tavla/tiles/${promo}.webp`} alt="" loading="lazy" />
-        <b>All {node.name}</b>
-        <span>Shop now<Icon name="arrow" width={2.2} /></span>
-      </Link>
-    </div>
-  );
-}

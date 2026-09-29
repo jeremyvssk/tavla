@@ -70,6 +70,7 @@ export default function HomePage() {
     () => (pages.every(Boolean) ? pickFeatured(pages.flatMap((d) => d!.items)) : null),
     pages,
   );
+  const failed = sources.some((r) => r.isError && !r.isFetching);
 
   return (
     <>
@@ -122,9 +123,16 @@ export default function HomePage() {
       <div className="t-rule" aria-hidden="true" />
       <div className="wrap">
         {featured === null ? (
-          <section className="t-sec" aria-busy="true">
+          <section className="t-sec" aria-busy={failed ? undefined : true}>
             <div className="t-head"><h2>Featured products</h2></div>
-            <p className="status-line">Loading products…</p>
+            {failed ? (
+              <p className="status-line" role="alert">
+                The products did not load.{' '}
+                <button type="button" className="link" onClick={() => sources.forEach((r) => r.isError && r.refetch())}>Try again</button>
+              </p>
+            ) : (
+              <p className="status-line">Loading products…</p>
+            )}
           </section>
         ) : (
           featured.length > 0 && (
