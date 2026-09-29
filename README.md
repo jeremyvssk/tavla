@@ -175,7 +175,8 @@ cd frontend && bun run test   # website: form validation and login flow
 
 Server tests run against a real PostgreSQL and Redis started by the test itself. They cover the
 login and catalog features above, including error cases and attack attempts (SQL injection,
-malicious file uploads, reusing an old refresh token).
+malicious file uploads, reusing an old refresh token). How the tests are organised is explained
+in [backend/README.md](backend/README.md#tests) and [frontend/README.md](frontend/README.md#tests).
 
 ---
 
@@ -331,3 +332,18 @@ Main endpoints:
 - **Server won't start after an update:** run `./start.sh reset` to start with a fresh database.
 - **No email arrives:** emails never leave your machine; they all appear in MailHog.
 - **Can't stay logged in:** open the site at `localhost`, not your computer's network IP.
+
+---
+
+## Where things are
+
+| Folder or file | What it is |
+|---|---|
+| [backend/](backend/README.md) | The server. Its README maps every feature to the file that handles it, and explains the tests |
+| [frontend/](frontend/README.md) | The website. Its README lists the pages, folders and tests |
+| [tools/catalog-import/](tools/catalog-import/README.md) | The Python scripts that build the demo catalog |
+| [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | Answers to the review checklist, with code and test references |
+| [docs/](docs/) | The assignment brief and the ERD image |
+| `CLAUDE.md`, `claude-docs/`, `.claude/` | Instructions and notes for Claude Code, the AI assistant used while building this |
+| `homework/` | The author's study notes for the topics in this project |
+| `start.sh`, `docker-compose.yml`, `.env.example` | Startup script, container setup, and the list of settings |

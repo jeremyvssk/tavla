@@ -1,12 +1,13 @@
 # Folder Structure
 
-Actual layout as of 2026-09-15. Entries marked *(planned)* do not exist yet — everything else is
+Actual layout as of 2026-09-29. Entries marked *(planned)* do not exist yet — everything else is
 real. Keep this file honest; a structure doc that lists imaginary files is worse than none.
 
 ```
 i-love-shopping1/
 ├── CLAUDE.md
-├── README.md                    # graded deliverable: overview, ERD, setup, usage, status
+├── README.md                    # graded deliverable: overview, ERD, setup, usage, what works
+├── REVIEW_ANSWERS.md            # one answer per review-checklist item, with code + test refs
 ├── start.sh                     # one-command startup
 ├── docker-compose.yml           # postgres, redis, mailhog, backend, frontend
 ├── .env.example                 # every variable, placeholders only
@@ -22,6 +23,7 @@ i-love-shopping1/
 │
 ├── backend/
 │   ├── CLAUDE.md                # always-on backend invariants
+│   ├── README.md                # human guide: feature → file map, request flow, Redis keys, tests
 │   ├── Dockerfile               # multi-stage: maven build → jre-alpine runtime
 │   ├── pom.xml                  # Spring Boot 4.0.6, Java 21
 │   └── src/main/java/com/iloveshopping/
@@ -48,35 +50,39 @@ i-love-shopping1/
 │       │                        # V5__catalog_search_indexes, V6__product_rating_trigger
 │       └── db/seed/             # R__seed_catalog (repeatable demo catalog, generated)
 │   └── src/test/java/com/iloveshopping/
-│       ├── auth/                # JwtServiceTest, TokenStoreServiceTest, TwoFactorServiceTest,
+│       ├── auth/                # JwtServiceTest, TokenStoreServiceTest, AuthServiceTest,
+│       │                        # TwoFactorServiceTest,
 │       │                        # PasswordResetServiceTest, CaptchaServiceTest,
 │       │                        # GoogleTokenVerifierTest, AuthControllerIT,
 │       │                        # PasswordResetControllerIT, TwoFactorControllerIT
 │       ├── user/                # UserServiceTest
 │       ├── catalog/             # CatalogBrowseIT, ProductAdminIT, SearchIT, ReviewIT,
-│       │                        # ProductImageIT + unit tests
+│       │   │                    # ProductImageIT + unit tests
+│       │   └── search/          # PostgresSearchServiceTest
 │       ├── security/            # InputValidationIT, RateLimitIT
 │       └── support/             # AbstractIntegrationTest, CatalogTestSupport, TestImages
 │
 └── frontend/
+    ├── README.md                # human guide: folders, pages, session handling, tests
     ├── Dockerfile               # multi-stage: bun build → nginx serve
     ├── nginx.conf               # SPA fallback, API proxy, /images serving
     ├── package.json, bun.lock
     ├── vite.config.ts           # Vite + Vitest + dev proxy mirroring nginx
     └── src/
-        ├── main.tsx             # providers: Redux, React Query, router; initial theme
+        ├── main.tsx             # providers: Redux, React Query, router
         ├── App.tsx              # routes + session restore
-        ├── index.css            # both theme token sets + all component styles
+        ├── index.css            # the Tavla theme tokens + all component styles
         ├── api/                 # client.ts (axios, in-memory token, refresh), auth.ts,
         │                        # catalog.ts, errors.ts
         ├── auth/session.ts      # restore / start / end session
-        ├── store/               # Redux store + authSlice (user, never the token)
+        ├── store/               # Redux store, authSlice (user, never the token),
+        │                        # cartSlice (saved to localStorage) + test
         ├── validation/          # authRules.ts: client copies of the DTO constraints
         ├── pages/               # Home, Catalog, Product, Login, Register, ForgotPassword,
         │                        # ResetPassword, Account (+ *.test.tsx)
-        ├── components/          # Layout, SearchBox, Field, RequireAuth, ProductCard, Stars,
-        │                        # ThemeToggle, GoogleButton, Recaptcha
-        ├── hooks/, lib/         # useDebouncedValue; loadScript, format
+        ├── components/          # Layout, SearchBox, Field, RequireAuth, ProductCard,
+        │                        # ProductRow, CartPanel, Icon, Stars, GoogleButton, Recaptcha
+        ├── hooks/, lib/         # useDebouncedValue; loadScript, format, variants (+ test)
         └── test/                # Vitest setup, renderWithProviders
 ```
 
@@ -86,6 +92,6 @@ i-love-shopping1/
   root stays focused on entity/repo/service.
 - There is **no `CorsConfig`, and there should not be one.** nginx serves the SPA and proxies the
   API on a single origin, so no request is ever cross-origin. See
-  [../README.md](../README.md#request-flow).
+  [../backend/README.md](../backend/README.md#how-a-request-travels).
 - Adding a new top-level backend path prefix means editing the proxy alternation in *both*
   `frontend/nginx.conf` and `frontend/vite.config.ts`.

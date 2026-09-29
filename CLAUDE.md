@@ -1,11 +1,22 @@
 # i-love-shopping — Project Context
 
-B2C e-commerce platform (demo catalog: chess & strategy games; the final niche is still open). School project in 3 parts.
+B2C e-commerce platform. Demo catalog: ~1,770 real chess, Go and backgammon products imported from
+three suppliers by the Python scripts in `tools/catalog-import` (a dev-only tool; the generated SQL
+seed is committed, so Docker stays the only prerequisite). School project in 3 parts.
 **Current scope: Project 1** — auth, database, product catalog.
 
 The assignment brief and its review checklist are in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
 [README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
-**Project status** section honest; a README claiming unbuilt features is worse than no README.
+**What works** section honest; a README claiming unbuilt features is worse than no README. It is
+written for non-experts: plain language, short, no design essays. The detail lives elsewhere:
+
+| Doc | Holds |
+|---|---|
+| [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | One answer per review-checklist item, with code paths and test names |
+| [backend/README.md](backend/README.md) | Feature → file map, request flow, Redis keys, migrations, test layout |
+| [frontend/README.md](frontend/README.md) | Folders, pages, how the token/session works, test layout |
+
+When a change adds, moves or renames something these docs name, update them in the same change.
 
 ## Learning Mode
 
@@ -61,7 +72,7 @@ coming back to ask whether it worked.
 | Layer | Choice |
 |---|---|
 | Frontend | React 18 + TypeScript + Vite, managed with Bun |
-| Frontend state | Redux Toolkit (auth) + React Query (server data) |
+| Frontend state | Redux Toolkit (auth, cart) + React Query (server data) |
 | Routing | React Router v6 |
 | HTTP | Axios with interceptors (access token stored in memory var) |
 | Backend | Spring Boot 4.0.6, Java 21 (**Boot 4, not 3** — see [backend/CLAUDE.md](backend/CLAUDE.md)) |
@@ -135,7 +146,8 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
 **products** — id UUID, name, description, price NUMERIC(10,2), stock_quantity,
   category_id FK, brand_id FK,
   weight_kg, weight_lbs, width/height/depth_cm, width/height/depth_in,
-  attributes JSONB, search_vector tsvector (generated),
+  attributes JSONB (incl. `variant_group` / `variant` for colour-size siblings),
+  search_vector tsvector (generated),
   average_rating NUMERIC(3,2), review_count INT, active, created_at, updated_at
 
 **product_images** — id, product_id FK, url, alt_text, display_order, is_primary
@@ -144,11 +156,14 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
   title, body, verified_purchase, created_at
   *(needed in P1: faceted search + sorting by rating requires real data)*
 
-**Redis keys:**
+**Redis keys** (full table in [backend/README.md](backend/README.md#where-data-is-stored)):
 - `refresh_token:{hash}` → user_id, TTL 7 days
 - `refresh_tokens_user:{userId}` → Set of hashes (for "revoke all on password reset")
+- `used_refresh_token:{hash}` → user_id, TTL 7 days (reuse detection: a replay revokes all)
 - `token_blocklist:{jti}` → "1", TTL = remaining access token lifetime
-- `2fa_pending:{userId}` → challenge marker, TTL 5 min
+- `2fa_pending:{challengeHash}` / `2fa_attempts:{challengeHash}` → user_id / counter, TTL 5 min
+- `pwreset:{hash}` → user_id, TTL 15 min
+- `rate_limit:{ip:…|login:…|reset_email:…}` → fixed-window counters
 
 **Image storage:** local filesystem, mounted as Docker volume `product_images_data`.
 Served via nginx at `/images/**`. Not suitable for production scale — use S3 later.
@@ -160,7 +175,8 @@ revoke-all on reset, the 2FA challenge key, no PII in the payload — and they l
 work. These are the ones that live outside that file:
 
 - Access token: JS module variable only. Never localStorage/sessionStorage.
-  On page reload → call `/auth/refresh` on mount to rehydrate.
+  On page reload → call `/auth/refresh` on mount to rehydrate. The cart is the only thing in
+  localStorage (`tavla.cart`) — it holds no secrets.
 - 2FA setup returns an `otpauth://` URI for the client to render as a QR code. The 8 backup codes
   are shown once and never again.
 - GDPR: UserService must support hard delete (cascade) and a data export endpoint.

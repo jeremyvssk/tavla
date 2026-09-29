@@ -19,7 +19,9 @@ Task-specific detail lives in skills, so it loads only when the work calls for i
 > of differences before writing backend code.
 
 For the *why* behind the validation rules, see
-[../claude-docs/backendInputValidation.md](../claude-docs/backendInputValidation.md).
+[../claude-docs/backendInputValidation.md](../claude-docs/backendInputValidation.md). For where
+each feature lives, the request flow and the Redis key table, see [README.md](README.md) — keep it
+current when you add, move or rename a class it names.
 
 ---
 

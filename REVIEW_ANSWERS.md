@@ -14,7 +14,14 @@ Backend paths below are short for `backend/src/main/java/com/iloveshopping/…`.
 
 ### 1. The README file contains a clear project overview, entity relationship diagram, setup instructions, and usage guide
 
-Yes. [README.md](README.md) has the overview, ERD, Quick start (`./start.sh`), a usage guide for every feature, an API reference, and an honest "Project status" section.
+Yes. [README.md](README.md) has:
+- the overview and what works / what isn't built yet
+- the ERD
+- Quick start (`./start.sh`)
+- how the main features and search work
+- a usage guide: what to try in the website, step-by-step 2FA setup, how to get the Google keys for CAPTCHA and Google login, and the API
+
+[backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md) show where each feature lives in the code and how the tests are organised.
 
 ### 2. The platform implements a Business-to-Consumer (B2C) e-commerce model.
 
@@ -27,13 +34,15 @@ Yes.
 - **OAuth:** Google sign-in. The backend verifies Google's ID token itself (`auth/GoogleTokenVerifier.java`).
 - If an email is already registered with a password, Google login returns `409` instead of merging the accounts, so nobody can take over an account that way.
 
+Google login needs a Google client ID, so it's hidden until one is set. Step-by-step setup: [README → Needs your own Google keys](README.md#needs-your-own-google-keys). The button then appears on `/login`.
+
 Tests: `AuthControllerIT`, `GoogleTokenVerifierTest`, `UserServiceTest`.
 
 ### 4. CAPTCHA is integrated into the registration process.
 
 Yes, Google reCAPTCHA on `/register`. The backend checks the token with Google and also checks the hostname, so a token solved on another site doesn't work (`auth/CaptchaService.java`).
 
-It's off by default so the app runs without Google keys. To turn it on, set `RECAPTCHA_ENABLED=true` and both keys in `.env`.
+It's off by default so the app runs without Google keys. To turn it on, set `RECAPTCHA_ENABLED=true` and both keys in `.env`, then run `./start.sh` again. Step-by-step: [README → Needs your own Google keys](README.md#needs-your-own-google-keys).
 
 Tests: `CaptchaServiceTest` (6 tests).
 
@@ -103,8 +112,8 @@ Tests: `PasswordResetServiceTest`, `PasswordResetControllerIT`.
 ### 11. Two-factor authentication (2FA) is available as an optional, user-enabled feature.
 
 Yes. It's off until the user turns it on in `/account`.
-1. **Setup:** confirm your password, then a QR code appears. Scan it with Google Authenticator or Authy.
-2. **Enable:** enter a code. You get 8 backup codes, shown once only.
+1. **Setup:** confirm your password, then a QR code appears. Scan it from inside Google Authenticator or Authy. On an iPhone, the Passwords app also works, but only after you save an entry with website `localhost` (full steps in the [README](README.md#in-the-website)).
+2. **Enable:** enter the 6-digit code from the app, not the long setup key. You get 8 backup codes, shown once only.
 3. **Login:** the password step now returns a 5-minute challenge instead of tokens. Tokens are issued only after a valid code. Backup codes work once each.
 4. **Disable:** needs your password.
 
@@ -294,4 +303,4 @@ Yes. `docker-compose.yml` runs 5 containers: postgres, redis, mailhog, backend a
 
 ### 30. The project uses Docker to containerize the application and its dependencies. Docker is the only host prerequisite - all other dependencies are managed within containers.
 
-Yes. Java, Maven, Bun and Node only exist inside the Docker build images. With nothing but Docker installed: `./start.sh`. The only exception is running the test suites directly on your machine, which needs Java 21, Maven and Bun.
+Yes. Java, Maven, Bun and Node only exist inside the Docker build images. The Python scripts in `tools/catalog-import` aren't needed either, because the SQL they produced is committed. With nothing but Docker installed: `./start.sh`. The only exception is running the test suites directly on your machine, which needs Java 21, Maven and Bun.
