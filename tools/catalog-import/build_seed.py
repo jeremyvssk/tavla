@@ -5,6 +5,8 @@ Inputs (written by the scrape_* scripts next to this one):
   data/ymi.json                 Yellow Mountain Imports: Go sets, boards, stones and bowls
   data/american_wholesaler.json American-Wholesaler (GammonVillage): backgammon, EU warehouse listings
 Colour and size listings of one product are grouped by variants.py.
+data/photos.json             written by frame_photos.py: which photos load, and how to frame each.
+                              Optional: without it the photos go in as listed, unchecked and unframed
 Output: the repeatable Flyway seed, written to the path given as the first argument, plus
 data/manifest.json mapping each product key to its supplier page.
 """
@@ -21,6 +23,11 @@ import variants
 
 HERE = Path(__file__).parent
 DATA = HERE / 'data'
+# Photos that 404 on the supplier's site or show a blank page; see the file's header.
+DEAD_IMAGES = {line.strip() for line in (HERE / 'dead_images.txt').read_text().splitlines()
+               if line.strip() and not line.startswith('#')}
+PHOTOS = json.loads((DATA / 'photos.json').read_text()) if (DATA / 'photos.json').exists() else {}
+FRAMING_KEYS = ('ratio', 'box', 'bleed', 'lift', 'print', 'focus')
 
 # --- category tree -------------------------------------------------------------------------------
 # (slug, name, parent slug). Order matters: parents first.
@@ -285,6 +292,12 @@ def encode_url(url):
     return urlunsplit(parts._replace(path=quote(parts.path, safe='/%'), query=parts.query))
 
 
+def framing(url):
+    """The image row's framing as JSON, or None for a photo frame_photos.py has not measured."""
+    photo = PHOTOS.get(url)
+    return json.dumps({k: photo[k] for k in FRAMING_KEYS}) if photo and 'box' in photo else None
+
+
 def sql(v):
     if v is None:
         return 'NULL'
@@ -480,6 +493,28 @@ def american_wholesaler():
 
 # --- assemble --------------------------------------------------------------------------------------
 
+def checked_photos(r):
+    """The listing's photos that load, each once, with the display photo first."""
+    kept, seen = [], set()
+    for url, alt in r['images']:
+        if len(url) > 255 or url in DEAD_IMAGES:
+            continue
+        photo = PHOTOS.get(url)
+        if photo is not None:
+            if 'box' not in photo:
+                continue  # dead, not an image, or blank
+            if photo['twin'] in seen:
+                continue  # the same photo again under another name
+            seen.add(photo['twin'])
+        kept.append((url, alt))
+    # The display photo shows the whole product: a close-up or a corner, cut by the frame, gives way
+    # to the first photo that is not cut. Books keep the cover the supplier put first.
+    whole = [i for i, (url, _) in enumerate(kept) if PHOTOS.get(url, {}).get('bleed') == '']
+    if whole and whole[0] > 0 and not r['category'].endswith('-books'):
+        kept.insert(0, kept.pop(whole[0]))
+    return kept
+
+
 def collect():
     rows, seen_keys = [], set()
     for source in (szachowo, ymi, american_wholesaler):
@@ -490,7 +525,7 @@ def collect():
             assert r['category'] in LEAVES, r['category']
             if r['price'] <= 0:
                 continue  # listed at 0.00 means "price on request": nothing to sell at
-            r['images'] = [(u, a) for u, a in r['images'] if len(u) <= 255]
+            r['images'] = checked_photos(r)
             rows.append(r)
     # Names must be unique for the storefront to make sense; suffix a clash with the supplier code.
     counts = {}
@@ -562,7 +597,7 @@ CREATE TEMP TABLE seed_product (
     attributes JSONB, description TEXT
 ) ON COMMIT DROP;
 
-CREATE TEMP TABLE seed_image (key TEXT, url TEXT, alt_text TEXT, display_order INT) ON COMMIT DROP;
+CREATE TEMP TABLE seed_image (key TEXT, url TEXT, alt_text TEXT, display_order INT, framing JSONB) ON COMMIT DROP;
 """)
     for start in range(0, len(rows), 200):
         w('INSERT INTO seed_product VALUES')
@@ -582,7 +617,8 @@ CREATE TEMP TABLE seed_image (key TEXT, url TEXT, alt_text TEXT, display_order I
     image_rows = [(r['key'], u, a, n) for r in rows for n, (u, a) in enumerate(r['images'])]
     for start in range(0, len(image_rows), 500):
         w('INSERT INTO seed_image VALUES')
-        w(',\n'.join(f'({sql(k)}, {sql(u)}, {sql(a[:255])}, {n})' for k, u, a, n in image_rows[start:start + 500]) + ';\n')
+        w(',\n'.join(f'({sql(k)}, {sql(u)}, {sql(a[:255])}, {n}, {sql(framing(u))})'
+                     for k, u, a, n in image_rows[start:start + 500]) + ';\n')
 
     w("""INSERT INTO products (id, name, description, price, stock_quantity, category_id, brand_id, attributes, active,
                       weight_kg, width_cm, height_cm, depth_cm, weight_lbs, width_in, height_in, depth_in, created_at, updated_at)
@@ -605,8 +641,8 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- Images: replace the seeded products' image rows wholesale, so a re-run never stacks duplicates.
 DELETE FROM product_images WHERE product_id IN (SELECT md5('seed-product:' || key)::uuid FROM seed_product);
-INSERT INTO product_images (product_id, url, alt_text, display_order, is_primary)
-SELECT md5('seed-product:' || i.key)::uuid, i.url, i.alt_text, i.display_order, i.display_order = 0
+INSERT INTO product_images (product_id, url, alt_text, display_order, is_primary, framing)
+SELECT md5('seed-product:' || i.key)::uuid, i.url, i.alt_text, i.display_order, i.display_order = 0, i.framing
 FROM seed_image i;
 
 -- Reviews, generated deterministically: each product gets 0-8 reviewers and ratings scattered

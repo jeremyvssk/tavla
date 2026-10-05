@@ -127,7 +127,7 @@ export default function LoginPage() {
             {serverError.message}
           </p>
         )}
-        <button className="button" type="submit" disabled={pending}>
+        <button className="button button--wide" type="submit" disabled={pending}>
           {pending ? 'Signing in…' : 'Sign in'}
         </button>
       </form>

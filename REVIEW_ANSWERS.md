@@ -197,7 +197,7 @@ Metric is the source of truth: you send kg/cm and the backend calculates the imp
 
 ### 18. Products are organized into categories with an intuitive browsing structure.
 
-Yes. Categories form a three-level tree (each category points to its parent). Opening a category shows the products in all of its subcategories too. The home page has category tiles, the catalog has a category filter, and product pages show a breadcrumb.
+Yes. Categories form a three-level tree (each category points to its parent). Opening a category shows the products in all of its subcategories too. The home page has category tiles, the catalog's category filter shows the path back up the tree, and a product page's Related row offers its whole top-level category.
 
 Demo: `/` → click a category → narrow it down → open a product. Test: `CatalogBrowseIT`.
 

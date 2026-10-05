@@ -91,6 +91,7 @@ public class ProductImageService {
     }
 
     static ProductImageResponse toResponse(ProductImage i) {
-        return new ProductImageResponse(i.getId(), i.getUrl(), i.getAltText(), i.getDisplayOrder(), i.isPrimary());
+        return new ProductImageResponse(i.getId(), i.getUrl(), i.getAltText(), i.getDisplayOrder(), i.isPrimary(),
+                i.getFraming());
     }
 }

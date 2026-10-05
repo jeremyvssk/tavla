@@ -1,11 +1,12 @@
-// Product detail: breadcrumb, photo gallery with a zoom viewer, colour/size variants, specs in both unit systems, paged reviews.
+// Product detail: photo gallery with a Back button with a zoom viewer, colour/size variants, specs in both unit systems, paged reviews.
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { fetchProduct, fetchReviews, postReview, ProductDetail, ProductVariant, searchProducts } from '../api/catalog';
 import { toApiError } from '../api/errors';
 import Field from '../components/Field';
 import Icon, { Perks } from '../components/Icon';
+import Photo from '../components/Photo';
 import ProductRow from '../components/ProductRow';
 import Stars from '../components/Stars';
 import { formatPrice } from '../lib/format';
@@ -42,33 +43,22 @@ export default function ProductPage() {
 
   return (
     <>
-      <div className="band band--shop band--crumbs">
-        <div className="wrap">
-          <ol className="crumbs" aria-label="Breadcrumb">
-            <li><Link to="/">Home</Link></li>
-            {product.breadcrumb.map((c) => (
-              <li key={c.id}><Link to={`/catalog?category=${c.slug}`}>{c.name}</Link></li>
-            ))}
-            <li><span aria-current="page">{product.name}</span></li>
-          </ol>
-        </div>
-      </div>
-
       <article className="wrap pd">
         {/* keyed by product so switching variant starts again at its first photo */}
         <Gallery key={product.id} product={product} />
 
+        {/* the order a shopper reads in: can I have it, is it good, who makes it, what is it, what does it cost, which one */}
         <div className="pd-info">
+          <div className="pd-top">
+            {stock}
+            <a href="#reviews-title" className="pd-top__rate"><Stars rating={product.averageRating} count={product.reviewCount} /></a>
+          </div>
           <p className="by">
             {product.brand ? <Link to={`/catalog?brand=${product.brand.slug}`}>{product.brand.name}</Link> : 'Tavla'}
           </p>
           <h1>{product.name}</h1>
-          <Stars rating={product.averageRating} count={product.reviewCount} />
+          <p className="pd-price">{formatPrice(product.price)}</p>
           <Variants product={product} />
-          <div className="pd-price">
-            <b>{formatPrice(product.price)}</b>
-            {stock}
-          </div>
           <Buy key={product.id} product={product} />
           <div className="pd-perks"><Perks /></div>
           {product.description && <p className="pd-desc">{product.description}</p>}
@@ -84,74 +74,123 @@ export default function ProductPage() {
   );
 }
 
-// Images arrive primary first, then in display order.
+// Images arrive primary first, then in display order. They are hotlinked from the suppliers, so a
+// photo can vanish from their site at any time: one that fails to load drops out of the gallery.
+// The photos sit in a native scroll-snap track, so a swipe follows the finger; the arrows, thumbnails and
+// the viewer move the same track, and its scroll position decides which photo counts as shown.
 function Gallery({ product }: { product: ProductDetail }) {
-  const [at, setAt] = useState(0);
+  const [shown, setAt] = useState(0);
   const [viewer, setViewer] = useState(false);
-  const swiped = useRef(0);
-  const touchX = useRef<number | null>(null);
-  const images = product.images;
+  const [broken, setBroken] = useState<ReadonlySet<number>>(new Set());
+  const track = useRef<HTMLDivElement>(null);
+  // the photo an arrow or thumbnail is gliding to: the scroll events on the way would otherwise report the
+  // photos it passes, and a second quick click would step from one of those
+  const target = useRef<number | null>(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const images = product.images.filter((img) => !broken.has(img.id));
+  const at = Math.min(shown, Math.max(0, images.length - 1));
+  const drop = (id: number) => setBroken((b) => new Set(b).add(id));
+  const shelf = `/catalog?category=${product.category.slug}`;
+  // the stage is square unless a short window caps its height; the photos are framed to its real shape
+  const [tile, setTile] = useState(1);
+  const hasImages = images.length > 0;
+  useEffect(() => {
+    const t = track.current;
+    if (!t) return;
+    const watch = new ResizeObserver(() => t.clientHeight && setTile(t.clientWidth / t.clientHeight));
+    watch.observe(t);
+    return () => watch.disconnect();
+  }, [hasImages]);
+
+  // Back returns to wherever the shopper came from; opened from a link elsewhere, it goes to the shelf.
+  const back = (
+    <button className="bk" type="button" aria-label="Back"
+      onClick={() => (location.key !== 'default' ? navigate(-1) : navigate(shelf))}>
+      <Icon name="chevL" width={2.2} />
+    </button>
+  );
 
   if (images.length === 0) {
     return (
       <div className="pd-media">
-        <div className="stage stage--none"><span aria-hidden="true">{product.category.name}</span></div>
+        <div className="stage stage--none">{back}<span aria-hidden="true">{product.category.name}</span></div>
       </div>
     );
   }
-  const image = images[at];
-  const show = (i: number) => setAt((i + images.length) % images.length);
   const fine = () => matchMedia('(hover:hover) and (pointer:fine)').matches;
+  function go(i: number, behavior: ScrollBehavior = 'smooth') {
+    const t = track.current;
+    if (!t) return;
+    const n = (i + images.length) % images.length;
+    // a glide only to the photo next door: a wrap-around or a far thumbnail would sweep past every photo
+    // in between, and reduced motion gets no glide at all
+    if (Math.abs(n - at) > 1 || matchMedia('(prefers-reduced-motion: reduce)').matches) behavior = 'instant';
+    // already there: no scroll event will come to clear the target
+    target.current = Math.abs(t.scrollLeft - n * t.clientWidth) < 2 ? null : n;
+    t.scrollTo({ left: n * t.clientWidth, behavior });
+    setAt(n);
+  }
 
   return (
     <div className="pd-media">
-      <div className="stage" role="group" aria-roledescription="gallery" aria-label={`Photos of ${product.name}`}
-        onClick={(e) => {
-          if (!(e.target as HTMLElement).closest('button') && Date.now() - swiped.current > 500) setViewer(true);
-        }}
-        onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
-        onTouchEnd={(e) => {
-          if (touchX.current === null) return;
-          const dx = e.changedTouches[0].clientX - touchX.current;
-          touchX.current = null;
-          // a swipe on the photo steps through it on phones
-          if (Math.abs(dx) > 40 && images.length > 1) { show(at + (dx < 0 ? 1 : -1)); swiped.current = Date.now(); }
-        }}>
-        {images.length > 1 && <span className="cnt">{at + 1} / {images.length}</span>}
-        <img src={image.url} alt={image.altText ?? product.name} width={820} height={820} fetchPriority="high" />
+      <div className="stage" role="group" aria-roledescription="gallery" aria-label={`Photos of ${product.name}`}>
+        <div className="track" ref={track}
+          onScroll={(e) => {
+            const t = e.currentTarget;
+            if (target.current !== null) {
+              if (Math.abs(t.scrollLeft - target.current * t.clientWidth) < 2) target.current = null;
+              return;
+            }
+            setAt(Math.round(t.scrollLeft / t.clientWidth));
+          }}
+          // a finger on the photo takes over from any glide still running
+          onPointerDown={() => { target.current = null; }}
+          onClick={() => setViewer(true)}>
+          {images.map((img, i) => (
+            <div className="slide" key={img.id} aria-hidden={i !== at}>
+              <Photo src={img.url} framing={img.framing} pad={0.06} tile={tile} alt={img.altText ?? product.name} draggable={false}
+                loading={i === 0 ? 'eager' : 'lazy'} onError={() => drop(img.id)} />
+            </div>
+          ))}
+        </div>
+        {back}
         {images.length > 1 && (
           <>
-            <button className="nv l" type="button" aria-label="Previous photo" onClick={() => show(at - 1)}><Icon name="chevL" width={2.2} /></button>
-            <button className="nv r" type="button" aria-label="Next photo" onClick={() => show(at + 1)}><Icon name="arrow" width={2.2} /></button>
+            <span className="cnt">{at + 1} / {images.length}</span>
+            <button className="nv l" type="button" aria-label="Previous photo" onClick={() => go(at - 1)}><Icon name="chevL" width={2.2} /></button>
+            <button className="nv r" type="button" aria-label="Next photo" onClick={() => go(at + 1)}><Icon name="arrow" width={2.2} /></button>
+            <div className="dots" aria-hidden="true">
+              {images.map((img, i) => <i key={img.id} data-on={i === at ? '' : undefined} />)}
+            </div>
           </>
         )}
-        <button className="zm" type="button" aria-label="View photos full screen" onClick={() => setViewer(true)}>
-          <Icon name="expand" width={2} />Enlarge
-        </button>
       </div>
       {images.length > 1 && (
         <div className="thumbs" role="group" aria-label="Choose a photo">
           {images.map((img, i) => (
             <button key={img.id} type="button" aria-label={`Photo ${i + 1}`} aria-current={i === at}
-              onClick={() => setAt(i)}
+              onClick={() => go(i)}
               // pointing at a thumbnail shows it, as on most large shops; a click still works for touch and keyboard
-              onPointerEnter={(e) => e.pointerType === 'mouse' && fine() && setAt(i)}>
-              <img src={img.url} alt="" loading="lazy" />
+              onPointerEnter={(e) => e.pointerType === 'mouse' && fine() && go(i, 'instant')}>
+              <Photo src={img.url} framing={img.framing} pad={0.08} loading="lazy" onError={() => drop(img.id)} />
             </button>
           ))}
         </div>
       )}
-      {viewer && <Viewer product={product} at={at} onStep={show} onPick={setAt} onClose={() => setViewer(false)} />}
+      {/* the viewer moves the track instantly behind itself, so closing it lands on the photo last seen */}
+      {viewer && <Viewer name={product.name} images={images} at={at} onStep={(i) => go(i, 'instant')} onPick={(i) => go(i, 'instant')}
+        onClose={() => setViewer(false)} />}
     </div>
   );
 }
 
 // Full-screen photos. A click zooms 2.5x around the point clicked and the photo pans with the pointer.
 // Opening pushes one history entry, so the browser's Back button closes the viewer instead of leaving.
-function Viewer({ product, at, onStep, onPick, onClose }: {
-  product: ProductDetail; at: number; onStep: (i: number) => void; onPick: (i: number) => void; onClose: () => void;
+function Viewer({ name, images, at, onStep, onPick, onClose }: {
+  name: string; images: ProductDetail['images']; at: number;
+  onStep: (i: number) => void; onPick: (i: number) => void; onClose: () => void;
 }) {
-  const images = product.images;
   const [zoom, setZoom] = useState(false);
   const [origin, setOrigin] = useState('50% 50%');
   const imgRef = useRef<HTMLImageElement>(null);
@@ -217,13 +256,13 @@ function Viewer({ product, at, onStep, onPick, onClose }: {
     <div className="lb" role="dialog" aria-modal="true" aria-label="Photos" data-zoom={zoom ? '' : undefined}>
       <div className="lb-top">
         <div>
-          {product.name} <span>{at + 1} / {images.length}</span>
+          {name} <span>{at + 1} / {images.length}</span>
           <span className="lb-hint">{fine ? 'Click the photo to zoom' : 'Tap the photo to zoom'}</span>
         </div>
         <button type="button" ref={closeRef} aria-label="Close photos" onClick={close}><Icon name="close" width={2} /></button>
       </div>
       <div className="lb-img" onClick={(e) => e.target === e.currentTarget && close()}>
-        <img ref={imgRef} src={image.url} alt={image.altText ?? product.name} draggable={false}
+        <img ref={imgRef} src={image.url} alt={image.altText ?? name} draggable={false}
           style={{ transformOrigin: zoom ? origin : undefined }}
           onClick={(e) => {
             base.current = null;
@@ -244,7 +283,7 @@ function Viewer({ product, at, onStep, onPick, onClose }: {
       <div className="lb-strip">
         {images.length > 1 && images.map((img, i) => (
           <button key={img.id} type="button" aria-label={`Photo ${i + 1}`} aria-current={i === at} onClick={() => onPick(i)}>
-            <img src={img.url} alt="" loading="lazy" />
+            <Photo src={img.url} framing={img.framing} pad={0.08} loading="lazy" />
           </button>
         ))}
       </div>
@@ -252,16 +291,16 @@ function Viewer({ product, at, onStep, onPick, onClose }: {
   );
 }
 
-// Quantity and Add to cart. Adding opens the cart panel, so the shopper sees it landed.
+// Add to cart, one at a time: the cart panel it opens has the quantity stepper, so the page keeps one
+// clear button. On a phone the button rides the bottom of the screen until the page scrolls to its place.
 function Buy({ product }: { product: ProductDetail }) {
   const dispatch = useAppDispatch();
   const inCart = useAppSelector((s) => s.cart.lines.find((l) => l.productId === product.id)?.quantity ?? 0);
-  const [quantity, setQuantity] = useState(1);
-  // the stepper stops where the cart would: stock, the per-line limit, minus what is already in the cart
+  // stops where the cart would: stock and the per-line limit, minus what is already in the cart
   const room = Math.max(0, Math.min(product.stockQuantity, LINE_LIMIT) - inCart);
 
   if (!product.inStock) {
-    return <div className="pd-buy"><button type="button" className="btn" disabled>Out of stock</button></div>;
+    return <div className="pd-buy"><button type="button" className="btn btn--buy" disabled>Out of stock</button></div>;
   }
 
   function add() {
@@ -273,33 +312,19 @@ function Buy({ product }: { product: ProductDetail }) {
       options: current && product.variants.length > 1
         ? Object.entries(current.options).map(([axis, value]) => `${axis}: ${value}`).join(', ') : null,
       imageUrl: product.images[0]?.url ?? null,
+      imageFraming: product.images[0]?.framing ?? null,
       price: product.price,
-      quantity: Math.min(quantity, room),
+      quantity: 1,
       maxQuantity: product.stockQuantity,
     }));
-    setQuantity(1);
     dispatch(opened());
   }
 
   return (
     <div className="pd-buy">
-      <div className="qty qty--lg" role="group" aria-label="Quantity">
-        <button type="button" aria-label="One fewer" disabled={quantity <= 1} onClick={() => setQuantity(quantity - 1)}>
-          <Icon name="minus" width={2} />
-        </button>
-        <output aria-live="polite">{room === 0 ? 0 : quantity}</output>
-        <button type="button" aria-label="One more" disabled={quantity >= room} onClick={() => setQuantity(quantity + 1)}>
-          <Icon name="plus" width={2} />
-        </button>
-      </div>
       <button type="button" className="btn btn--buy" disabled={room === 0} onClick={add}>
         <Icon name="bag" width={2} />{room === 0 ? 'All in your cart' : 'Add to cart'}
       </button>
-      {inCart > 0 && (
-        <button type="button" className="pd-incart" onClick={() => dispatch(opened())}>
-          {inCart} in your cart · View cart
-        </button>
-      )}
     </div>
   );
 }
@@ -308,11 +333,13 @@ function Buy({ product }: { product: ProductDetail }) {
 function Variants({ product }: { product: ProductDetail }) {
   const current = product.variants.find((v) => v.id === product.id);
   if (!current || product.variants.length < 2) return null;
+  const axes = axesOf(product.variants);
   return (
     <div className="vo">
-      {axesOf(product.variants).map(([axis, values]) => (
+      {axes.map(([axis, values]) => (
         <fieldset key={axis}>
-          <legend>{axis}: <b>{current.options[axis]}</b></legend>
+          {/* one axis names itself ("Blue", "Brown"); with two, "Colour" and "Size" tell the rows apart */}
+          <legend className={axes.length === 1 ? 'vh' : undefined}>{axis}: <b>{current.options[axis]}</b></legend>
           <div className="vsw-row">
             {values.map((value) => {
               const target = variantFor(product.variants, current, axis, value) as ProductVariant;

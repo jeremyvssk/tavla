@@ -13,5 +13,6 @@ public record ProductSummary(
         boolean inStock,
         String brandName,
         String categorySlug,
-        String primaryImageUrl) {
+        String primaryImageUrl,
+        ImageFraming primaryImageFraming) {
 }

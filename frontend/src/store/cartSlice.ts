@@ -1,5 +1,6 @@
 // Redux cart state: the lines in the bag and whether the cart panel is open. No server side until checkout exists.
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import type { ImageFraming } from '../lib/framing';
 
 export interface CartLine {
   productId: string;
@@ -8,6 +9,8 @@ export interface CartLine {
   /** e.g. "Colour: Green", so two variants of one product can be told apart in the panel */
   options: string | null;
   imageUrl: string | null;
+  /** missing on lines saved before photos were framed */
+  imageFraming?: ImageFraming | null;
   /** the price when it was added; checkout will re-price against the server */
   price: number;
   quantity: number;
@@ -76,7 +79,15 @@ export function loadCart(): CartState {
     const lines = Array.isArray(raw) ? raw.filter((l): l is CartLine =>
       l && typeof l.productId === 'string' && typeof l.name === 'string' && typeof l.price === 'number'
       && Number.isInteger(l.quantity) && Number.isInteger(l.maxQuantity) && l.quantity >= 1) : [];
-    return { lines: lines.map((l) => ({ ...l, quantity: clamp(l.quantity, l.maxQuantity) })), open: false };
+    // a framing that is not the measured shape would throw while placing the photo: show it whole instead
+    const framed = (f: unknown) => !!f && typeof f === 'object' && typeof (f as ImageFraming).ratio === 'number'
+      && Array.isArray((f as ImageFraming).box) && (f as ImageFraming).box.length === 4;
+    return {
+      lines: lines.map(({ imageFraming, ...l }) => ({
+        ...l, quantity: clamp(l.quantity, l.maxQuantity), ...(framed(imageFraming) && { imageFraming }),
+      })),
+      open: false,
+    };
   } catch {
     return initialState;
   }

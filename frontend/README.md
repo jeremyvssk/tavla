@@ -20,7 +20,7 @@ Every file starts with a one-line comment saying what it does.
 | `auth/session.ts` | Starting, restoring and ending a login session |
 | `store/` | Redux state: who is logged in (`authSlice`) and the cart (`cartSlice`) |
 | `validation/` | Form rules (email format, password length...), copied from the backend's rules |
-| `hooks/`, `lib/` | Small helpers: delaying search input, loading Google's scripts, formatting prices, picking colour/size variants |
+| `hooks/`, `lib/` | Small helpers: delaying search input, loading Google's scripts, formatting prices, picking colour/size variants, placing a photo on its tile (`framing.ts`, used by `components/Photo.tsx`) |
 | `test/` | Test setup and a helper that renders a page with everything it needs |
 | `index.css` | All styles and colours |
 
@@ -90,3 +90,4 @@ Test files sit next to the file they test (`*.test.ts`, `*.test.tsx`):
 | `api/client.test.ts` | Expired tokens are refreshed once, even when several requests fail together |
 | `store/cartSlice.test.ts` | Cart rules: merging items, stock limits, totals |
 | `lib/variants.test.ts` | Picking the right product when you switch colour or size |
+| `lib/framing.test.ts` | Placing a photo: uncut products centred, cut edges on the tile edge, book covers whole |

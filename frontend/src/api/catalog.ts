@@ -1,4 +1,5 @@
 // Typed calls to the public catalog endpoints, plus the search-parameter shape shared with the URL.
+import type { ImageFraming } from '../lib/framing';
 import { api } from './client';
 
 export interface ProductSummary {
@@ -11,6 +12,7 @@ export interface ProductSummary {
   brandName: string | null;
   categorySlug: string;
   primaryImageUrl: string | null;
+  primaryImageFraming: ImageFraming | null;
 }
 
 export interface FacetValue {
@@ -66,7 +68,7 @@ export interface ProductDetail {
   category: CategoryRef;
   breadcrumb: CategoryRef[];
   brand: { id: number; name: string; slug: string; logoUrl: string | null } | null;
-  images: { id: number; url: string; altText: string | null; primary: boolean }[];
+  images: { id: number; url: string; altText: string | null; primary: boolean; framing: ImageFraming | null }[];
   attributes: Record<string, unknown> | null;
   measurements: {
     weightKg: number | null;

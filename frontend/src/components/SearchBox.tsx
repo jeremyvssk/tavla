@@ -40,11 +40,18 @@ export default function SearchBox() {
     event.preventDefault();
     setOpen(false);
     if (active >= 0 && visible) {
-      navigate(`/catalog/${suggestions[active].id}`);
+      pick(suggestions[active].id);
       return;
     }
     const q = text.trim();
     navigate(q ? `/catalog?q=${encodeURIComponent(q)}` : '/catalog');
+  }
+
+  // A suggestion leads to a product page, which has no ?q= for the box to mirror, so the box empties.
+  // The effect above cannot do it: arriving from a page with no query leaves the search params unchanged.
+  function pick(id: string) {
+    setText('');
+    navigate(`/catalog/${id}`);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -101,7 +108,7 @@ export default function SearchBox() {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 setOpen(false);
-                navigate(`/catalog/${s.id}`);
+                pick(s.id);
               }}
             >
               {s.name}

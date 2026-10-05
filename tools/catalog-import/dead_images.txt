@@ -1,0 +1,52 @@
+# Supplier photos the seed leaves out, one URL per line, exactly as they appear in the seed.
+# Checked 2026-09-30 by loading all 4,411 seeded photos in a browser.
+# frame_photos.py finds dead links and blank images by itself; what it cannot tell is listed here.
+
+# Sunrise's placeholder (a grey camera), standing in for a missing book cover. Without it the card
+# shows the plain no-photo label instead of a photo that is not of the product.
+https://www.polishchess.com/images/domyslny.webp
+
+# Blank white book pages: they load, but show nothing.
+https://www.polishchess.com/images/Ksiazki/QUALITYCHESS/Attacking_Manual_2/mini/1000px_attacking_manual_2-00008.webp
+https://www.polishchess.com/images/Ksiazki/QUALITYCHESS/Chess_Lessons/mini/1000px_Chess-Lessons-00001.webp
+
+# Gone from the supplier's site (HTTP 404).
+https://cdn.shopify.com/s/files/1/0876/1176/files/rosewood-1-folding-go-game-set-board-with-double-convex-melamine-stones-yellow-mountain-imports-5_82172e81.jpg?v=1789428952&width=1000
+https://cdn.shopify.com/s/files/1/0876/1176/files/shin-kaya-beginners-reversible-13x13-9x9-go-game-set-board-0_8-inch-with-double-convex-melamine-stones-yellow-mountain-imports-6_3a204851.jpg?v=1789427873&width=1000
+https://www.polishchess.com/images/Foto_szachow/104D/CH104D_%28oak%29_%281%29.jpg
+https://www.polishchess.com/images/Foto_szachow/104D/CH104D_%28oak%29_%282%29.jpg
+https://www.polishchess.com/images/Foto_szachow/1indian%20chess%20pieces/Kings%20Bridal%203%2C75%20rosewood/Kings%20Bridal%203%2C75%20rosewood2.jpg
+https://www.polishchess.com/images/Foto_szachow/1indian%20chess%20pieces/Kings%20Bridal%203%2C75%20rosewood/Kings%20Bridal%203%2C75%20rosewood.jpg
+https://www.polishchess.com/images/Foto_szachow/CH112J/1_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH112J/3_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH112J/5_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH112J/6_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH112J/7_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ_1_resized_%E2%80%94_kopia.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_1_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_3_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_4_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_5_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_7_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH122AJ/CH122AJ_8_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH154A_2018/CH154A_1_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH154A_2018/CH154A_2_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH154A_2018/CH154A_3_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH154A_2018/CH154A_5_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH154A_2018/CH154A_6_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH99_JOWISZ/1_resize.jpg
+https://www.polishchess.com/images/Foto_szachow/CH99_JOWISZ/2_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH99_JOWISZ/4_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH99_JOWISZ/5_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/CH99_JOWISZ/6_resized.jpg
+https://www.polishchess.com/images/Foto_szachow/chtx51_51/mini/1000px_CHTX50_51%20Plastic%20foldable%20board%20BROWN.webp
+https://www.polishchess.com/images/Foto_szachow/CHW1BLUE/mini/1000px_CHW1%20BLUE%204%20resized.webp
+https://www.polishchess.com/images/Foto_szachow/D58_WAL_BS_NOT/mini/1000px_D55%20WAL%20BS%20with%20notation%20resized.webp
+https://www.polishchess.com/images/Foto_szachow/DBT01/mini/1000px_Mocowanie%20resized.webp
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%201.jpg
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%202.jpg
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%203.jpg
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%204.jpg
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%205.jpg
+https://www.polishchess.com/images/Foto_szachow/Deski%20elektroniczne/TournamentWalnut/CHCA19%20resized%206.jpg
+https://www.polishchess.com/images/Foto_szachow/GE36/ge-36%2648.jpg

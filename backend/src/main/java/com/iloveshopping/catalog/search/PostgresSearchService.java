@@ -2,6 +2,7 @@
 package com.iloveshopping.catalog.search;
 
 import com.iloveshopping.catalog.dto.FacetValue;
+import com.iloveshopping.catalog.dto.ImageFraming;
 import com.iloveshopping.catalog.dto.Facets;
 import com.iloveshopping.catalog.dto.PriceBucket;
 import com.iloveshopping.catalog.dto.ProductSearchParams;
@@ -12,6 +13,7 @@ import com.iloveshopping.catalog.dto.Suggestion;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -89,9 +91,11 @@ public class PostgresSearchService implements SearchService {
     private enum Omit { NONE, BRAND, PRICE, RATING }
 
     private final JdbcClient jdbc;
+    private final ObjectMapper json;
 
-    public PostgresSearchService(JdbcClient jdbc) {
+    public PostgresSearchService(JdbcClient jdbc, ObjectMapper json) {
         this.jdbc = jdbc;
+        this.json = json;
     }
 
     @Override
@@ -121,11 +125,12 @@ public class PostgresSearchService implements SearchService {
         List<ProductSummary> items = jdbc.sql("""
                         SELECT p.id, p.name, p.price, p.average_rating, p.review_count, p.stock_quantity,
                                b.name AS brand_name, c.slug AS category_slug,
-                               (SELECT i.url FROM product_images i WHERE i.product_id = p.id
-                                ORDER BY i.is_primary DESC, i.display_order NULLS LAST, i.id LIMIT 1) AS image_url
+                               img.url AS image_url, img.framing::text AS image_framing
                         FROM products p
                         JOIN categories c ON c.id = p.category_id
                         LEFT JOIN brands b ON b.id = p.brand_id
+                        LEFT JOIN LATERAL (SELECT i.url, i.framing FROM product_images i WHERE i.product_id = p.id
+                                           ORDER BY i.is_primary DESC, i.display_order NULLS LAST, i.id LIMIT 1) img ON true
                         WHERE\s""" + where(c, Omit.NONE) + """
 
                         ORDER BY\s""" + orderBy + """
@@ -141,12 +146,17 @@ public class PostgresSearchService implements SearchService {
                         rs.getInt("stock_quantity") > 0,
                         rs.getString("brand_name"),
                         rs.getString("category_slug"),
-                        rs.getString("image_url")))
+                        rs.getString("image_url"),
+                        framing(rs.getString("image_framing"))))
                 .list();
 
         Facets facets = new Facets(categoryFacet(c, args), brandFacet(c, args), priceFacet(c, args), ratingFacet(c, args));
         int totalPages = (int) ((total + size - 1) / size);
         return new ProductSearchResponse(items, page, size, total, totalPages, sort, c.fuzzy(), facets);
+    }
+
+    private ImageFraming framing(String text) {
+        return text == null ? null : json.readValue(text, ImageFraming.class);
     }
 
     private long count(Criteria c, Map<String, Object> args) {

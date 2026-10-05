@@ -150,7 +150,8 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
   search_vector tsvector (generated),
   average_rating NUMERIC(3,2), review_count INT, active, created_at, updated_at
 
-**product_images** — id, product_id FK, url, alt_text, display_order, is_primary
+**product_images** — id, product_id FK, url, alt_text, display_order, is_primary,
+  framing JSONB (how the photo sits on its tile; measured by `tools/catalog-import/frame_photos.py`)
 
 **product_reviews** — id UUID, product_id FK, user_id FK, rating INT (1-5),
   title, body, verified_purchase, created_at

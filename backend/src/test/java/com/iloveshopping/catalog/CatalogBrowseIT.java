@@ -122,6 +122,25 @@ class CatalogBrowseIT extends CatalogTestSupport {
     }
 
     @Test
+    void photoFraming_reachesTheProductPageAndTheListings() throws Exception {
+        UUID id = seededId(SEEDED_SINGLE_GO_SET);
+        jdbc.update("UPDATE product_images SET framing = ?::jsonb WHERE product_id = ? AND is_primary",
+                "{\"ratio\": 1.5, \"box\": [0.1, 0.2, 0.9, 1], \"bleed\": \"b\", \"lift\": 1.04, \"print\": false}", id);
+        String name = jdbc.queryForObject("SELECT name FROM products WHERE id = ?", String.class, id);
+
+        mockMvc.perform(get("/products/{id}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.images[0].framing.bleed").value("b"))
+                .andExpect(jsonPath("$.images[0].framing.box[3]").value(1.0))
+                .andExpect(jsonPath("$.images[0].framing.lift").value(1.04))
+                .andExpect(jsonPath("$.images[0].framing.print").value(false));
+        // the listing reads the primary photo through its own SQL, so it is checked separately
+        mockMvc.perform(get("/products").param("q", name))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[?(@.id == '" + id + "')].primaryImageFraming.bleed", contains("b")));
+    }
+
+    @Test
     void brands_areListedPublicly() throws Exception {
         mockMvc.perform(get("/brands"))
                 .andExpect(status().isOk())

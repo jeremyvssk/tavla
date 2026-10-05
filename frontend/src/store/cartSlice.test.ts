@@ -48,6 +48,9 @@ describe('cart', () => {
   it('restores a saved cart and drops anything malformed', () => {
     localStorage.setItem('tavla.cart', JSON.stringify([{ ...item, quantity: 2 }, { productId: 'x', quantity: 'lots' }, null]));
     expect(loadCart().lines).toEqual([{ ...item, quantity: 2 }]);
+    // a framing that is not the measured shape is dropped, so the photo is shown whole instead of throwing
+    localStorage.setItem('tavla.cart', JSON.stringify([{ ...item, quantity: 1, imageFraming: { box: 'x' } }]));
+    expect(loadCart().lines).toEqual([{ ...item, quantity: 1 }]);
     localStorage.setItem('tavla.cart', '{not json');
     expect(loadCart().lines).toEqual([]);
   });

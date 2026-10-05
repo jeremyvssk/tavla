@@ -1,10 +1,11 @@
-// The cart: a panel from the right with the lines, quantity steppers, subtotal and a checkout that waits for payments.
+// The cart: a panel from the right with the lines, quantity steppers, subtotal and the checkout button (checkout itself is Project 2).
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { formatPrice } from '../lib/format';
 import { useAppDispatch, useAppSelector } from '../store';
 import { closed, itemCount, LINE_LIMIT, quantitySet, removed, subtotal } from '../store/cartSlice';
 import Icon from './Icon';
+import Photo from './Photo';
 
 // The same threshold the delivery line promises.
 const FREE_SHIPPING = 100;
@@ -60,7 +61,7 @@ export default function CartPanel() {
               {cart.lines.map((l) => (
                 <li key={l.productId}>
                   <Link className="im" to={`/catalog/${l.productId}`} tabIndex={-1} aria-hidden="true" onClick={() => dispatch(closed())}>
-                    {l.imageUrl ? <img src={l.imageUrl} alt="" loading="lazy" /> : <Icon name="bag" width={1.4} />}
+                    {l.imageUrl ? <Photo src={l.imageUrl} framing={l.imageFraming} pad={0.07} loading="lazy" /> : <Icon name="bag" width={1.4} />}
                   </Link>
                   <div className="tx">
                     <Link className="nm" to={`/catalog/${l.productId}`} onClick={() => dispatch(closed())}>{l.name}</Link>
@@ -87,9 +88,8 @@ export default function CartPanel() {
             <div className="cart-foot">
               <p className="sum"><span>Subtotal</span><b>{formatPrice(total)}</b></p>
               <p className="note">Shipping and taxes are worked out at checkout.</p>
-              {/* checkout arrives with payments in Project 2; until then the button says so instead of leading nowhere */}
-              <button type="button" className="btn" disabled aria-describedby="cart-soon">Checkout<Icon name="arrow" width={2} /></button>
-              <p className="note" id="cart-soon">Checkout opens when payments go live.</p>
+              {/* the checkout flow and payments are Project 2; the button is in place for it and does nothing yet */}
+              <button type="button" className="btn">Checkout<Icon name="arrow" width={2} /></button>
               <button type="button" className="btn btn--ghost" onClick={() => dispatch(closed())}>Continue shopping</button>
             </div>
           </>

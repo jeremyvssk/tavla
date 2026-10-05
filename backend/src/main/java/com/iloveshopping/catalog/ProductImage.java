@@ -1,6 +1,7 @@
 // JPA entity mapping the "product_images" table; the bytes live in StorageService, only the URL is here.
 package com.iloveshopping.catalog;
 
+import com.iloveshopping.catalog.dto.ImageFraming;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -9,6 +10,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.UUID;
 
@@ -36,4 +39,8 @@ public class ProductImage {
 
     @Column(name = "is_primary", nullable = false)
     private boolean primary;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private ImageFraming framing;
 }

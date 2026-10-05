@@ -22,7 +22,7 @@ const TILES = [
   ['chess-books', 'Chess books', 'Openings, strategy, New In Chess', 1.05, '50% 30%'],
   ['go', 'Go', 'Sets, boards, stones, bowls', 1, '50% 50%'],
   ['backgammon', 'Backgammon', 'Tournament, premium, classic', 1, '50% 50%'],
-  ['more-games', 'More games', 'Draughts and multi-game sets', 1.3, '55% 45%'],
+  ['more-games', 'More games', 'Draughts and multi-game sets', 1, '55% 50%'],
 ] as const;
 
 // One strong product from each shelf the home page shows off, in this order. Fifteen, so on a

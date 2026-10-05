@@ -13,6 +13,18 @@ the customer.
 Product photos are **hotlinked** from the suppliers, not copied into this repo: their licence to
 resellers only covers active partners. Prices are the suppliers' retail prices.
 
+Hotlinked photos can disappear. `frame_photos.py` downloads every photo and records the dead,
+blank and repeated ones, and `dead_images.txt` lists what it cannot judge by itself (blank book
+pages, the supplier's camera placeholder); `build_seed.py` leaves all of them out. The storefront
+also hides any photo that fails to load, so a photo that breaks later doesn't show up as an empty box.
+
+`frame_photos.py` also measures how each photo should sit on its square tile, because many supplier
+photos are cut by their frame (a close-up of the pieces runs off the bottom). One rule places every
+photo: a cut edge goes on the tile's edge, everything else keeps a margin, and book covers are
+shown whole. The measurements go into `product_images.framing`; `frontend/src/lib/framing.ts`
+applies the rule. The same script settles each product's display photo: the first photo that
+shows the whole product, not a cut close-up.
+
 ## Rebuild
 
 ```sh
@@ -20,10 +32,13 @@ cd tools/catalog-import
 python3 scrape_szachowo.py            # ~1,700 pages, 2 workers: allow 30-60 min; resumable
 python3 fetch_ymi.py
 python3 fetch_american_wholesaler.py
+python3 frame_photos.py               # ~4,400 photos plus Sunrise's originals: allow 2 h; resumable
 python3 build_seed.py ../../backend/src/main/resources/db/seed/R__seed_catalog.sql
 ```
 
-Python 3.10+, standard library only. Raw scrapes land in `data/` (gitignored), together with
+Python 3.10+, standard library only, except `frame_photos.py`, which needs Pillow and NumPy
+(`pip install pillow numpy`); without its `data/photos.json`, `build_seed.py` still runs but
+leaves the photos unchecked and unframed. Raw scrapes land in `data/` (gitignored), together with
 `manifest.json`, which maps every seeded product key to its supplier page. Then run
 `./start.sh reset && ./start.sh` so the database picks up the new seed from scratch.
 
