@@ -17,6 +17,17 @@ is to launch Tavla as a real shop.
 | Planned for 14 October 2026 | Admin panels for running the shop |
 | After that | Launch |
 
+## Contents
+
+- [What works](#what-works)
+- [Worth a look](#worth-a-look)
+- [How I work with Claude Code](#how-i-work-with-claude-code)
+- [Run it](#run-it)
+- [How it is built](#how-it-is-built)
+- [Database](#database)
+- [Tests](#tests)
+- [Where things are](#where-things-are)
+
 ---
 
 ## What works
