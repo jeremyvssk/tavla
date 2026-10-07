@@ -6,13 +6,15 @@ seed is committed, so Docker stays the only prerequisite). School project in 3 p
 **Current scope: Project 1** — auth, database, product catalog.
 
 The assignment brief and its review checklist are in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
-[README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
-**What works** section honest; a README claiming unbuilt features is worse than no README. It is
-written for non-experts: plain language, short, no design essays. The detail lives elsewhere:
+[README.md](README.md) is written for hiring managers first (who built it, status and roadmap,
+what's worth a look, how Claude Code is used), then setup and the ERD; it is still the graded
+deliverable. Keep its **What works** section and roadmap dates honest; a README claiming unbuilt
+features is worse than no README. Plain language, short, no design essays, no em-dashes. The
+detail lives elsewhere:
 
 | Doc | Holds |
 |---|---|
-| [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | One answer per review-checklist item, with code paths and test names |
+| [docs/USAGE.md](docs/USAGE.md) | How to try each feature: 2FA setup, Google keys, becoming an admin, the API, troubleshooting |
 | [backend/README.md](backend/README.md) | Feature → file map, request flow, Redis keys, migrations, test layout |
 | [frontend/README.md](frontend/README.md) | Folders, pages, how the token/session works, test layout |
 

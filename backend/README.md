@@ -150,5 +150,4 @@ The tests use a real PostgreSQL rather than an in-memory database like H2, becau
 PostgreSQL-only features (JSONB, full-text search, triggers) that H2 doesn't have.
 
 **Finding the tests for a feature:** the test is named after the class, e.g. `TwoFactorService` →
-`TwoFactorServiceTest`, and `TwoFactorController` → `TwoFactorControllerIT`. For which tests cover
-which review checklist item, see [../REVIEW_ANSWERS.md](../REVIEW_ANSWERS.md).
+`TwoFactorServiceTest`, and `TwoFactorController` → `TwoFactorControllerIT`.

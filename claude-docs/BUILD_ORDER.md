@@ -55,7 +55,8 @@ Status as of 2026-09-29. Sequence matters: each step's verification is the next 
   following the tree; browser-only cart (`cartSlice`, localStorage, checkout disabled until P2).
   *Verified:* `mvn verify` 85 unit + 80 integration, 37 Vitest.
 - **16. Docs for reviewers.** Plain-language README, `REVIEW_ANSWERS.md`, and human guides in
-  `backend/README.md` and `frontend/README.md`.
+  `backend/README.md` and `frontend/README.md`. Later: README rewritten for hiring managers,
+  usage guide moved to `docs/USAGE.md`, `REVIEW_ANSWERS.md` removed.
 
 ## Remaining
 

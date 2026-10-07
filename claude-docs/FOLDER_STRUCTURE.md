@@ -6,14 +6,14 @@ real. Keep this file honest; a structure doc that lists imaginary files is worse
 ```
 i-love-shopping1/
 ├── CLAUDE.md
-├── README.md                    # graded deliverable: overview, ERD, setup, usage, what works
-├── REVIEW_ANSWERS.md            # one answer per review-checklist item, with code + test refs
+├── README.md                    # for hiring managers: status, roadmap, what works, setup, ERD
 ├── start.sh                     # one-command startup
 ├── docker-compose.yml           # postgres, redis, mailhog, backend, frontend
 ├── .env.example                 # every variable, placeholders only
 │
 ├── docs/
 │   ├── ASSIGNMENT.md            # the brief, verbatim
+│   ├── USAGE.md                 # how to try each feature (moved out of README)
 │   └── i-love-shopping-erd.png
 ├── claude-docs/                 # design + build notes (this file, BUILD_ORDER, validation)
 ├── homework/                    # study material and learning plan

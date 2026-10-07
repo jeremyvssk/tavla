@@ -1,18 +1,110 @@
-# i-love-shopping
+# Tavla
 
-An online shop (B2C e-commerce) for chess, Go and backgammon products. This repository is
-**Project 1 of 3**: user accounts and login, the database, and the product catalog. Cart
-checkout and payments come in Project 2, the admin dashboard in Project 3.
+An online shop for chess, Go and backgammon, with about 1,770 real products from three suppliers.
 
-The shop starts with about 1,770 real products (with photos and reviews) so there is something to
-browse right away. The assignment brief is in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
+I'm Jeremy Vaask, a fullstack developer in Tallinn. I built Tavla end to end: the **Java and
+Spring Boot** server, the **React and TypeScript** website, the **PostgreSQL** database and the
+Python scripts that import the catalog. The whole thing starts with one command in **Docker**.
 
-> **Reviewers:** every checklist item is answered in **[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md)**,
-> with where to find it in the code and which tests cover it.
+**Status: in development.** Accounts, login and the product catalog work today. A distributor is
+already lined up to supply the products, so once checkout and the admin panels are done, the plan
+is to launch Tavla as a real shop.
+
+| When | What |
+|---|---|
+| Done | Accounts and secure login, the product catalog with search and filters, a cart saved in the browser |
+| Planned for 8 October 2026 | Cart and checkout, with payments through **Stripe** |
+| Planned for 14 October 2026 | Admin panels for running the shop |
+| After that | Launch |
 
 ---
 
-## Quick start
+## What works
+
+**Accounts and security**
+- Sign up and log in with email and password, or with Google
+- Two-factor login with an authenticator app, plus 8 one-time backup codes
+- Password reset by email, which also logs the account out on every device
+- CAPTCHA on sign-up, and rate limits on login, sign-up and search
+
+**Catalog**
+- Categories you can browse level by level, starting from the four games
+- Search with filters for category, brand, price and rating, and suggestions while you type
+- Typo-tolerant search: `stanton` still finds Staunton sets
+- Sorting by featured, relevance, price, rating and newest
+- Product pages with photos, colour and size options, reviews, and sizes in metric and imperial
+- Admins can add, edit and delete products and upload images
+
+**Not built yet**
+- Checkout and payment. The cart works, but is saved in the browser only.
+- Admin screens. Admin actions work through the API only.
+- Deleting your own review from the website (the API supports it).
+
+---
+
+## Worth a look
+
+**The catalog is real.** Python scripts in [tools/catalog-import](tools/catalog-import/README.md)
+read three suppliers' public product data and turn it into one SQL file that the database loads on
+startup. They also download every photo, drop the dead and blank ones, and measure how each photo
+should sit on its square tile, so a photo that is cut off at one edge lines up with the tile's edge.
+The generated SQL is committed, so you don't need Python to run the shop.
+
+**A refresh token works exactly once.** Every refresh swaps the old token for a new one in Redis in
+one atomic step, a short Lua script in `auth/TokenStoreService.java`, so two requests sent at the
+same moment can't both use it. Replaying a used token logs the account out on every device. Tokens
+are stored only as SHA-256 hashes, and the website keeps the access token in memory, never in
+browser storage.
+
+**Search without a separate search engine.** PostgreSQL full-text search ranks a match in the name
+above a match in the description, and the `pg_trgm` extension catches typos. Each filter shows how
+many results it would leave. `EXPLAIN ANALYZE` on 50,000 products confirmed the queries use the
+indexes. Search sits behind one interface, so Elasticsearch could replace it later without changing
+the code that calls it. See `catalog/search/PostgresSearchService.java`.
+
+**Uploads are checked by content, not by name.** `catalog/ImageProcessor.java` reads the file's
+real format from its first bytes and checks the image size before decoding it, because a tiny PNG
+can claim to be 50,000 pixels wide and fill the server's memory. It then saves a freshly encoded
+copy under a random name, so nothing hidden in the original, such as GPS location data, survives.
+
+**Tests run against the real thing.** Integration tests start a real PostgreSQL and Redis in Docker
+(Testcontainers) and call the API the way the website does. Some of them try attacks: SQL
+injection, oversized input, malicious uploads, getting around rate limits and reusing an old
+refresh token.
+
+Paths above are under `backend/src/main/java/com/iloveshopping/`.
+
+---
+
+## How I work with Claude Code
+
+I build with Claude Code, and the setup is in this repo for anyone to read.
+
+- **The decisions are mine.** For each new feature I state the goal and sketch the design first:
+  how data flows, where state lives, what can fail, and why this approach over the alternative.
+  Claude pokes holes in it before any code is written. I direct the core logic, review every diff,
+  and list the test cases before the tests are written. The point is that I can explain and defend
+  every part of the code.
+- **It coaches as well as builds.** Before building each feature I studied the topic behind it: JWT,
+  OAuth, two-factor login, CAPTCHA, password reset, input validation, database design and search. My
+  notes are in `homework/`. Claude is set up to ask me to predict an answer before it explains, and
+  to hint before it solves.
+- **Context on demand.** `CLAUDE.md` loads every session, so it holds only working rules and a
+  routing table. Backend rules (security invariants, configuration, errors) are in
+  `backend/CLAUDE.md`. The detailed checklists are three project skills, `new-endpoint`, `verify`
+  and `flyway-migration`, which load only when the task matches. They started inside
+  `backend/CLAUDE.md`, which loads on every turn, and were moved out to keep the context small.
+- **Working rules.** Touch only what the task needs, so every changed line traces back to a request.
+  Nothing is done until it has been checked. When a change moves or renames something a doc names,
+  the doc is updated in the same change.
+- **Passing tests aren't the finish line.** After the tests pass, the next question is what a
+  passing test suite would miss: two requests racing each other, queries that slow down once the
+  data grows, security holes. Those get checked separately, like the search check on 50,000
+  products.
+
+---
+
+## Run it
 
 The only thing you need installed is **Docker**. From the project folder, run:
 
@@ -36,38 +128,27 @@ The first start takes a few minutes while everything is built. Then open:
 
 Settings live in `.env` (created on first start from `.env.example`). The defaults work as-is.
 
----
-
-## What works
-
-**Accounts and security**
-- Sign up and log in with email and password, or with Google
-- CAPTCHA on sign-up (off by default; turn on with `RECAPTCHA_ENABLED=true` and your keys in `.env`)
-- Password reset by email
-- Optional two-factor login (authenticator app, plus 8 one-time backup codes)
-- Short-lived access tokens kept only in memory, refresh tokens in a cookie JavaScript cannot read
-- Each refresh token works exactly once; reusing an old one is rejected
-- Logout invalidates both tokens; a password reset logs out every device
-- Rate limiting on login, sign-up and search
-
-**Catalog**
-- Categories you can browse level by level, starting from the four games
-- Search with filters for category, brand, price and rating, and suggestions while you type
-- Tolerates typos (`stanton` still finds Staunton sets)
-- Sorting by relevance, price, rating and newest
-- Product pages with photos, specs in metric and imperial, colour/size options and reviews
-- Admins can add, edit and delete products and upload images
-
-**Not built yet**
-- Checkout and payment (Project 2). The cart works, but is saved in the browser only.
-- Admin screens (Project 3). Admin actions are available through the API only.
-- Deleting your own review from the website (the API supports it).
+How to try each feature, including two-factor login, the Google keys, becoming an admin and calling
+the API directly, is in the [usage guide](docs/USAGE.md).
 
 ---
 
-## Database
+## How it is built
 
-PostgreSQL. The schema is created automatically on startup.
+| Part | Technology |
+|---|---|
+| Website | React 18, TypeScript, Vite. Redux Toolkit for login state and the cart, React Query for server data, Axios for requests |
+| Server | Java 21, Spring Boot 4, Spring Security |
+| Database | PostgreSQL 16, with the schema managed by Flyway |
+| Sessions | Redis 7 |
+| Email (development) | MailHog |
+| Everything runs in | Docker Compose: 5 containers (website, server, database, Redis, MailHog) |
+
+The server is one application split into three areas: **users**, **login** and **catalog**. Each
+area has its own code and talks to the others only through a small interface, so an area could be
+split out into its own service later.
+
+### Database
 
 ![Entity relationship diagram](docs/i-love-shopping-erd.png)
 
@@ -78,91 +159,10 @@ PostgreSQL. The schema is created automatically on startup.
 | `brands` | Product brands |
 | `products` | Name, description, price, stock, category, brand, weight and size in both unit systems, extra attributes, average rating |
 | `product_images` | Photos of a product, in display order |
-| `product_reviews` | A 1–5 star rating and text; one review per user per product |
+| `product_reviews` | A 1 to 5 star rating and text; one review per user per product |
 
 Login sessions (refresh tokens, logged-out tokens, pending 2FA) are kept in **Redis**, not in the
 database, and expire on their own.
-
-### Where the product data comes from
-
-The products are real listings from three chess, Go and backgammon suppliers. A few **Python
-scripts** in [tools/catalog-import](tools/catalog-import/README.md) download the suppliers'
-product pages and turn them into one SQL file, which the database loads on startup.
-
-Why Python, when the shop itself is Java and TypeScript? The scripts are a one-off tool the
-developer runs by hand, not part of the shop. Python is quick to write for this kind of
-download-and-reshape job and needs no extra libraries. The finished SQL file is committed to the
-repository, so **you don't need Python to run the project**. Docker is still the only thing to
-install.
-
----
-
-## How it is built
-
-| Part | Technology |
-|---|---|
-| Website | React 18, TypeScript, Vite. Redux Toolkit for login state, React Query for server data, Axios for requests |
-| Server | Java 21, Spring Boot 4, Spring Security |
-| Database | PostgreSQL 16, with the schema managed by Flyway |
-| Sessions | Redis 7 |
-| Email (development) | MailHog |
-| Everything runs in | Docker Compose: 5 containers (website, server, database, Redis, MailHog) |
-
-The server is one application split into three areas: **users**, **login** and **catalog**. Each
-area has its own code and talks to the others only through a small interface, so an area could be
-split out into its own service later if it ever needs to scale on its own.
-
-### How the main features work
-
-**Login tokens (JWT).** Logging in returns two tokens. The *access token* is a signed JWT (library:
-jjwt) that lasts 15 minutes and holds only the user id and role, no personal data. The website keeps
-it in memory only, never in browser storage. The *refresh token* lasts 7 days and sits in an
-`httpOnly` cookie that JavaScript can't read. After a page reload, the website uses the refresh
-token to get a new access token.
-
-**Single-use refresh tokens.** Every refresh swaps the old refresh token for a new one in Redis in
-one atomic step (a small Lua script), so the same token can never be used twice, even by two
-requests at the same moment.
-
-**Logout.** The access token's id goes on a blocklist in Redis until the token would have expired
-anyway, and the refresh token is deleted.
-
-**Two-factor login (TOTP).** The standard authenticator-app method (library: `dev.samstevens.totp`).
-The server creates a secret, the website shows it as a QR code, and the app then shows a new 6-digit
-code every 30 seconds. After 2FA is on, logging in takes the password *and* a current code.
-
-**CAPTCHA.** Google reCAPTCHA on sign-up. The server checks the CAPTCHA token with Google before
-creating the account.
-
-**Google login.** The website gets an ID token from Google, and the server checks that token's
-signature against Google's public keys before logging the user in.
-
-**Password reset.** The server emails a one-time link that expires. Using it sets the new password
-and logs the account out everywhere.
-
-**Validation.** Forms are checked in the browser for quick feedback, and every request is checked
-again on the server, because the browser checks can be bypassed.
-
-**Image upload.** The server checks the file's actual contents, not its name, to confirm it's a
-JPEG or PNG. It then re-saves the image, which strips anything hidden inside it, and stores it under
-a random name.
-
-### Search
-
-Search uses PostgreSQL's built-in full-text search, so no separate search engine is needed.
-
-- **Matching.** Every product has a pre-built search index made from its name, description and
-  attributes (such as wood type). A match in the name ranks above a match in the description.
-- **Typos.** If nothing matches exactly, the search falls back to "similar-looking" names
-  (the `pg_trgm` extension), so `stanton` still finds Staunton sets. The page says when it did this.
-- **Filters.** Results can be narrowed by category, brand, price range and rating. Each filter shows
-  how many results it would leave.
-- **Sorting.** By relevance, price, rating or newest.
-- **Suggestions.** Product names appear while you type, from 2 characters on.
-- **Speed.** Indexes keep searches fast. They were tested on 50,000 products.
-
-Search is behind one interface in the code, so it can be swapped for a dedicated search engine
-(such as Elasticsearch) later without changing anything else.
 
 ---
 
@@ -170,168 +170,11 @@ Search is behind one interface in the code, so it can be swapped for a dedicated
 
 ```sh
 cd backend && mvn verify      # server: unit, API and security tests (needs Docker running)
-cd frontend && bun run test   # website: form validation and login flow
+cd frontend && bun run test   # website: form validation, login flow and cart
 ```
 
-Server tests run against a real PostgreSQL and Redis started by the test itself. They cover the
-login and catalog features above, including error cases and attack attempts (SQL injection,
-malicious file uploads, reusing an old refresh token). How the tests are organised is explained
-in [backend/README.md](backend/README.md#tests) and [frontend/README.md](frontend/README.md#tests).
-
----
-
-## Usage guide
-
-Most features can be tried in the website at <http://localhost:5173>. Some need your own Google
-keys, and a few only exist in the API. What each checklist item should show is in
-[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md).
-
-### In the website
-
-| Try this | Where |
-|---|---|
-| Browse, filter and sort | `/catalog`: pick a category, brand, price or rating, change the sort |
-| Search with suggestions | Search box in the header: type `wal` |
-| Create an account | `/register` |
-| Reset your password | `/login` → *Forgot your password?*, then open the email in [MailHog](http://localhost:8025) |
-| Turn on two-factor login | `/account` (see below) |
-| Write a review | Any product page, while logged in |
-| Add to cart | Any product page |
-
-To see the data behind it, connect to the database with the credentials from the Quick start table.
-
-**Setting up two-factor login**
-
-First, on the website:
-1. Log in and open `/account`.
-2. Type your password and click **Set up two-factor**. A QR code and a long **setup key** appear.
-
-Then add it to an app on your phone. Pick **one** of these:
-
-*Option A: Google Authenticator or Authy (easiest)*
-1. Install the app from the App Store or Google Play.
-2. Open the app and tap **+** → **Scan a QR code**.
-3. Scan the QR code on the screen. An entry called **i-love-shopping** appears with a 6-digit code.
-
-*Option B: the Passwords app on an iPhone (no install)*
-
-Scanning with the camera alone won't work: the Passwords app needs a saved entry for the site
-first, and it has none for this one.
-1. Open **Passwords** and tap **+** to add a new entry.
-2. Set **Website** to `localhost`, **User name** to your email, and **Password** to your password.
-   Save.
-3. Open that entry, tap **Edit** → **Set Up Verification Code**.
-4. Choose **Scan QR Code** and scan the screen, or choose **Enter Setup Key** and type the long key.
-5. The entry now shows a 6-digit code.
-
-Finish on the website:
-1. Type the **6-digit code** from your phone into the box. Don't type the long setup key there.
-   The code changes every 30 seconds, so use the current one.
-2. Click **Turn on two-factor**.
-3. Write down the 8 backup codes. They are shown only once. Each one works once if you lose your
-   phone.
-
-From then on, logging in asks for the current 6-digit code after your password.
-
-### Needs your own Google keys
-
-CAPTCHA and Google login are built, but they're switched off by default so the project runs without
-any accounts or keys. Both need a (free) Google account. The keys go into the `.env` file in the
-project folder, which `./start.sh` creates on its first run.
-
-**CAPTCHA on sign-up**
-1. Go to <https://www.google.com/recaptcha/admin/create> and sign in with Google.
-2. Fill in the form:
-   - **Label:** anything, e.g. `i-love-shopping`
-   - **reCAPTCHA type:** **Challenge (v2)** → **"I'm not a robot" Checkbox**
-   - **Domains:** `localhost`
-3. Click **Submit**. The next page shows a **Site key** and a **Secret key**.
-4. Open `.env` and set:
-   ```sh
-   RECAPTCHA_ENABLED=true
-   RECAPTCHA_SITE_KEY=<the site key>
-   RECAPTCHA_SECRET_KEY=<the secret key>
-   ```
-
-**Sign in with Google**
-1. Go to <https://console.cloud.google.com> and sign in. At the top, open the project picker →
-   **New project**, name it anything, and create it.
-2. In the search bar, open **Google Auth Platform** and click **Get started**. Enter an app name and
-   your email, choose **External**, and finish the steps.
-3. Under **Audience** → **Test users**, add the Google account you'll log in with. While the app is in
-   testing, only these accounts can sign in.
-4. Under **Clients** → **Create client**:
-   - **Application type:** **Web application**
-   - **Authorised JavaScript origins:** add both `http://localhost` and `http://localhost:5173`
-   - Leave **Authorised redirect URIs** empty.
-5. Click **Create** and copy the **Client ID** (it ends in `.apps.googleusercontent.com`). You don't
-   need the client secret.
-6. Open `.env` and set:
-   ```sh
-   GOOGLE_CLIENT_ID=<the client ID>
-   ```
-   A new client can take a few minutes to start working.
-
-**Then restart the project**
-
-Run `./start.sh`. It rebuilds the website with the new keys, and a restart without the rebuild isn't
-enough. Open the site at `http://localhost:5173`, not `127.0.0.1`, because Google only accepts the
-addresses you registered. The CAPTCHA box then appears on `/register`, and the **Sign in with
-Google** button on `/login`.
-
-If you'd rather skip this, the automated tests still cover both features (`CaptchaServiceTest`,
-`GoogleTokenVerifierTest`).
-
-### Becoming an admin
-
-There is no admin sign-up on purpose. Create a normal account, then promote it:
-
-```sh
-docker compose exec postgres psql -U app -d iloveshopping \
-  -c "UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com'"
-```
-
-Log in again to get admin rights.
-
-### Using the API directly
-
-The website covers everyday use. Some things can only be done through the API, like admin actions
-and checking by hand that an old refresh token is rejected.
-
-```sh
-# log in: the response body has the access token, the refresh token comes back as a cookie
-curl -i -X POST http://localhost:8080/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"your password"}'
-
-# get a new access token; run it twice with the same cookie and the second call is rejected
-curl -i -X POST http://localhost:8080/auth/refresh -b 'refresh_token=<cookie value>'
-
-# search
-curl 'http://localhost:8080/products?q=walnut&minPrice=25&maxPrice=100&sort=price_asc'
-```
-
-Main endpoints:
-
-| Endpoint | Does |
-|---|---|
-| `POST /auth/register`, `/auth/login`, `/auth/logout`, `/auth/refresh` | Sign up, log in, log out, renew the session |
-| `POST /auth/forgot-password`, `/auth/reset-password` | Password reset |
-| `POST /auth/2fa/setup`, `/auth/2fa/enable`, `/auth/2fa/login` | Two-factor login |
-| `POST /auth/oauth/google` | Log in with Google (needs `GOOGLE_CLIENT_ID` in `.env`) |
-| `GET /products`, `/products/{id}`, `/categories`, `/brands` | Browse and search the catalog |
-| `GET /search/suggestions?q=` | Suggestions while typing |
-| `POST /products/{id}/reviews` | Write a review (logged in) |
-| `POST/PUT/DELETE /products`, `POST /products/{id}/images` | Manage products and images (admin) |
-
----
-
-## Troubleshooting
-
-- **Port already in use:** change `FRONTEND_PORT` or `BACKEND_PORT` in `.env` and start again.
-- **Server won't start after an update:** run `./start.sh reset` to start with a fresh database.
-- **No email arrives:** emails never leave your machine; they all appear in MailHog.
-- **Can't stay logged in:** open the site at `localhost`, not your computer's network IP.
+How the tests are organised is explained in [backend/README.md](backend/README.md#tests) and
+[frontend/README.md](frontend/README.md#tests).
 
 ---
 
@@ -341,9 +184,8 @@ Main endpoints:
 |---|---|
 | [backend/](backend/README.md) | The server. Its README maps every feature to the file that handles it, and explains the tests |
 | [frontend/](frontend/README.md) | The website. Its README lists the pages, folders and tests |
-| [tools/catalog-import/](tools/catalog-import/README.md) | The Python scripts that build the demo catalog |
-| [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | Answers to the review checklist, with code and test references |
-| [docs/](docs/) | The assignment brief and the ERD image |
-| `CLAUDE.md`, `claude-docs/`, `.claude/` | Instructions and notes for Claude Code, the AI assistant used while building this |
-| `homework/` | The author's study notes for the topics in this project |
+| [tools/catalog-import/](tools/catalog-import/README.md) | The Python scripts that build the catalog |
+| [docs/](docs/) | The [usage guide](docs/USAGE.md), the original brief and the ERD image |
+| `CLAUDE.md`, `claude-docs/`, `.claude/` | Instructions and notes for Claude Code |
+| `homework/` | My study notes for the topics in this project |
 | `start.sh`, `docker-compose.yml`, `.env.example` | Startup script, container setup, and the list of settings |
