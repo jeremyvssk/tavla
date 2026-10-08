@@ -1,4 +1,4 @@
-// SearchService on Postgres: full-text ranking, SQL facet counts, category subtrees, trigram suggestions.
+// SearchService on Postgres: full-text ranking, SQL facet counts, category subtrees, trigram suggestions, cart complements.
 package com.iloveshopping.catalog.search;
 
 import com.iloveshopping.catalog.dto.FacetValue;
@@ -16,7 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,6 +90,18 @@ public class PostgresSearchService implements SearchService {
                 )
                 SELECT id FROM subtree)""";
 
+    // What a product card shows, read from a row aliased p (products, or a CTE of products rows).
+    private static final String SUMMARY_COLUMNS = """
+            p.id, p.name, p.price, p.average_rating, p.review_count, p.stock_quantity,
+            b.name AS brand_name, c.slug AS category_slug,
+            img.url AS image_url, img.framing::text AS image_framing""";
+
+    private static final String SUMMARY_JOINS = """
+            JOIN categories c ON c.id = p.category_id
+            LEFT JOIN brands b ON b.id = p.brand_id
+            LEFT JOIN LATERAL (SELECT i.url, i.framing FROM product_images i WHERE i.product_id = p.id
+                               ORDER BY i.is_primary DESC, i.display_order NULLS LAST, i.id LIMIT 1) img ON true""";
+
     /** Which filter a facet query leaves out. See {@link #where}. */
     private enum Omit { NONE, BRAND, PRICE, RATING }
 
@@ -122,37 +137,76 @@ public class PostgresSearchService implements SearchService {
         args.put("offset", (long) page * size);
         String orderBy = c.fuzzy() && sort.equals("relevance") ? FUZZY_RELEVANCE : ORDER_BY.get(sort);
 
-        List<ProductSummary> items = jdbc.sql("""
-                        SELECT p.id, p.name, p.price, p.average_rating, p.review_count, p.stock_quantity,
-                               b.name AS brand_name, c.slug AS category_slug,
-                               img.url AS image_url, img.framing::text AS image_framing
-                        FROM products p
-                        JOIN categories c ON c.id = p.category_id
-                        LEFT JOIN brands b ON b.id = p.brand_id
-                        LEFT JOIN LATERAL (SELECT i.url, i.framing FROM product_images i WHERE i.product_id = p.id
-                                           ORDER BY i.is_primary DESC, i.display_order NULLS LAST, i.id LIMIT 1) img ON true
+        List<ProductSummary> items = jdbc.sql("SELECT " + SUMMARY_COLUMNS + " FROM products p " + SUMMARY_JOINS + """
+
                         WHERE\s""" + where(c, Omit.NONE) + """
 
                         ORDER BY\s""" + orderBy + """
 
                         LIMIT :limit OFFSET :offset""")
                 .params(args)
-                .query((rs, row) -> new ProductSummary(
-                        rs.getObject("id", UUID.class),
-                        rs.getString("name"),
-                        rs.getBigDecimal("price"),
-                        rs.getBigDecimal("average_rating"),
-                        rs.getInt("review_count"),
-                        rs.getInt("stock_quantity") > 0,
-                        rs.getString("brand_name"),
-                        rs.getString("category_slug"),
-                        rs.getString("image_url"),
-                        framing(rs.getString("image_framing"))))
+                .query((rs, row) -> summary(rs))
                 .list();
 
         Facets facets = new Facets(categoryFacet(c, args), brandFacet(c, args), priceFacet(c, args), ratingFacet(c, args));
         int totalPages = (int) ((total + size - 1) / size);
         return new ProductSearchResponse(items, page, size, total, totalPages, sort, c.fuzzy(), facets);
+    }
+
+    /**
+     * Each category's game is the root above it. Candidates are one row per product name (the best
+     * reviewed variant), so five colours of one board don't fill the row. Something up to twice the
+     * price of the dearest given product comes first: a €1,300 e-board is no add-on to a €70 set.
+     * Then a shelf the cart doesn't have yet before one it has: a chess set wants a board, a clock.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<ProductSummary> complements(Collection<UUID> productIds, int limit) {
+        if (productIds.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("""
+                        WITH RECURSIVE game AS (
+                            SELECT id, id AS root_id FROM categories WHERE parent_id IS NULL
+                            UNION ALL
+                            SELECT c.id, g.root_id FROM categories c JOIN game g ON c.parent_id = g.id
+                        ),
+                        given AS (
+                            SELECT p.name, p.price, p.category_id, g.root_id
+                            FROM products p JOIN game g ON g.id = p.category_id
+                            WHERE p.id IN (:ids)
+                        ),
+                        candidates AS (
+                            SELECT DISTINCT ON (p.name) p.*, p.category_id IN (SELECT category_id FROM given) AS same_shelf
+                            FROM products p JOIN game g ON g.id = p.category_id
+                            WHERE p.active AND p.stock_quantity > 0
+                              AND g.root_id IN (SELECT root_id FROM given)
+                              AND p.name NOT IN (SELECT name FROM given)
+                            ORDER BY p.name, p.review_count DESC, p.id
+                        )
+                        SELECT\s""" + SUMMARY_COLUMNS + " FROM candidates p " + SUMMARY_JOINS + """
+
+                        ORDER BY p.price > 2 * (SELECT max(price) FROM given), p.same_shelf,\s""" + FEATURED + """
+
+                        LIMIT :limit""")
+                .param("ids", productIds)
+                .param("limit", limit)
+                .query((rs, row) -> summary(rs))
+                .list();
+    }
+
+    private ProductSummary summary(ResultSet rs) throws SQLException {
+        return new ProductSummary(
+                rs.getObject("id", UUID.class),
+                rs.getString("name"),
+                rs.getBigDecimal("price"),
+                rs.getBigDecimal("average_rating"),
+                rs.getInt("review_count"),
+                rs.getInt("stock_quantity") > 0,
+                rs.getString("brand_name"),
+                rs.getString("category_slug"),
+                rs.getString("image_url"),
+                framing(rs.getString("image_framing")));
     }
 
     private ImageFraming framing(String text) {

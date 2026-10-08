@@ -8,11 +8,21 @@ import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.auth.exception.InvalidResetTokenException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
 import com.iloveshopping.auth.exception.TwoFactorAlreadyEnabledException;
+import com.iloveshopping.cart.dto.StockConflictResponse;
+import com.iloveshopping.cart.exception.CartNotFoundException;
+import com.iloveshopping.cart.exception.NotEnoughStockException;
+import com.iloveshopping.cart.exception.RejectedTokenException;
 import com.iloveshopping.catalog.exception.CatalogConflictException;
 import com.iloveshopping.catalog.exception.CatalogNotFoundException;
 import com.iloveshopping.catalog.exception.InvalidImageException;
 import com.iloveshopping.catalog.exception.InvalidReferenceException;
 import com.iloveshopping.catalog.exception.NotReviewOwnerException;
+import com.iloveshopping.order.exception.OrderConflictException;
+import com.iloveshopping.order.exception.OrderNotFoundException;
+import com.iloveshopping.order.exception.OrderValidationException;
+import com.iloveshopping.payment.exception.EventQueueUnavailableException;
+import com.iloveshopping.payment.exception.InvalidWebhookSignatureException;
+import com.iloveshopping.payment.exception.PaymentUnavailableException;
 import com.iloveshopping.ratelimit.RateLimitExceededException;
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
 import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
@@ -141,6 +151,57 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CatalogConflictException.class)
     public ResponseEntity<ErrorResponse> handleCatalogConflict(CatalogConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(e.getCode()));
+    }
+
+    // The same body the security entry point writes, so the client's refresh-and-retry kicks in.
+    @ExceptionHandler(RejectedTokenException.class)
+    public ResponseEntity<ErrorResponse> handleRejectedToken(RejectedTokenException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("unauthorized"));
+    }
+
+    @ExceptionHandler(CartNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCartNotFound(CartNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(e.getCode()));
+    }
+
+    // Carries the stock and what is in the cart, so the page can offer the quantity that is left.
+    @ExceptionHandler(NotEnoughStockException.class)
+    public ResponseEntity<StockConflictResponse> handleNotEnoughStock(NotEnoughStockException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getBody());
+    }
+
+    @ExceptionHandler(OrderNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleOrderNotFound(OrderNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("order_not_found"));
+    }
+
+    @ExceptionHandler(OrderConflictException.class)
+    public ResponseEntity<ErrorResponse> handleOrderConflict(OrderConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(e.getCode()));
+    }
+
+    // A rule across two checkout fields; the same body as an annotation failure, so the page marks the field.
+    @ExceptionHandler(OrderValidationException.class)
+    public ResponseEntity<ErrorResponse> handleOrderValidation(OrderValidationException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("validation_failed", e.getFields()));
+    }
+
+    // Stripe unreachable or not configured. Logged where it happened; the client only learns to try again later.
+    @ExceptionHandler(PaymentUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handlePaymentUnavailable(PaymentUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new ErrorResponse("payment_unavailable"));
+    }
+
+    // RabbitMQ didn't take a verified webhook. Stripe treats any 5xx as "send it again later", so nothing is lost.
+    @ExceptionHandler(EventQueueUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleEventQueueUnavailable(EventQueueUnavailableException e) {
+        log.error("Webhook not queued", e);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(new ErrorResponse("queue_unavailable"));
+    }
+
+    @ExceptionHandler(InvalidWebhookSignatureException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidWebhookSignature(InvalidWebhookSignatureException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("invalid_signature"));
     }
 
     // A body that points at a category or brand that doesn't exist is bad input, not a missing URL.

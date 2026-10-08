@@ -4,8 +4,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom';
 import { CategoryNode, fetchCategories } from '../api/catalog';
 import { endSession } from '../auth/session';
+import { useCart } from '../hooks/useCart';
 import { useAppDispatch, useAppSelector } from '../store';
-import { closed as cartClosed, itemCount, opened as cartOpened } from '../store/cartSlice';
+import { closed as cartClosed, opened as cartOpened } from '../store/cartSlice';
 import CartPanel from './CartPanel';
 import Icon, { Perks } from './Icon';
 import SearchBox from './SearchBox';
@@ -27,7 +28,7 @@ function rootOf(tree: CategoryNode[], slug: string | null) {
 
 export default function Layout() {
   const { status, user } = useAppSelector((s) => s.auth);
-  const inCart = useAppSelector((s) => itemCount(s.cart));
+  const inCart = useCart().cart.itemCount;
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -58,11 +59,12 @@ export default function Layout() {
     return () => ro.disconnect();
   }, []);
 
-  // A route change closes whatever was open over the page.
+  // A route change closes whatever was open over the page; checkout's "Cart" link asks for the cart instead.
+  const openCart = (location.state as { openCart?: boolean } | null)?.openCart === true;
   useEffect(() => {
     setMenu(false);
-    dispatch(cartClosed());
-  }, [location.pathname, location.search, dispatch]);
+    dispatch(openCart ? cartOpened() : cartClosed());
+  }, [location.pathname, location.search, openCart, dispatch]);
 
   // Scrolling is recorded as it happens, not on leaving: by the time a route change runs any effect the
   // next page is already rendered, and a shorter page has already clamped scrollY.
@@ -234,7 +236,7 @@ export default function Layout() {
             </div>
           </div>
           <div className="base">
-            <span>© 2026 Tavla · i-love-shopping, Project 1</span>
+            <span>© 2026 Tavla · Prices include VAT</span>
             <span>Product photos: Sunrise Chess &amp; Games, Yellow Mountain Imports, American-Wholesaler</span>
           </div>
         </div>

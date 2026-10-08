@@ -5,6 +5,7 @@ import * as authApi from '../api/auth';
 import { toApiError } from '../api/errors';
 import { reloadUser } from '../auth/session';
 import Field from '../components/Field';
+import { AccountTabs } from '../components/OrderParts';
 import { useAppDispatch, useAppSelector } from '../store';
 
 export default function AccountPage() {
@@ -13,6 +14,7 @@ export default function AccountPage() {
   return (
     <section className="account" aria-labelledby="account-title">
       <p className="label">Signed in</p>
+      <AccountTabs />
       <h1 id="account-title" className="title">
         {user.fullName}
       </h1>

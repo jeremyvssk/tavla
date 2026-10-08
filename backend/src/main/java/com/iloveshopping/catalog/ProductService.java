@@ -1,21 +1,26 @@
-// Product detail reads and admin create, update and delete.
+// Product detail reads, the cart's product lookups, reserving stock for orders, and admin create, update and delete.
 package com.iloveshopping.catalog;
 
 import com.iloveshopping.catalog.dto.Measurements;
 import com.iloveshopping.catalog.dto.ProductDetail;
+import com.iloveshopping.catalog.dto.ProductForCart;
 import com.iloveshopping.catalog.dto.ProductImageResponse;
 import com.iloveshopping.catalog.dto.ProductRequest;
 import com.iloveshopping.catalog.dto.ProductVariant;
 import com.iloveshopping.catalog.exception.CatalogNotFoundException;
 import com.iloveshopping.storage.StorageService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ProductService {
@@ -40,6 +45,51 @@ public class ProductService {
     @Transactional(readOnly = true)
     public ProductDetail getDetail(UUID id) {
         return toDetail(productRepository.findByIdAndActiveTrue(id).orElseThrow(ProductService::notFound));
+    }
+
+    /**
+     * The catalog side of a cart: one query for the products and their brands, one for their photos.
+     * Ids that match no product are simply absent from the map.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, ProductForCart> forCart(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, ProductImage> firstImage = new HashMap<>();
+        imageRepository.findByProductIdInOrderByPrimaryDescDisplayOrderAscIdAsc(ids)
+                .forEach(i -> firstImage.putIfAbsent(i.getProductId(), i));
+        Map<UUID, ProductForCart> products = new HashMap<>();
+        for (Product p : productRepository.findWithBrandByIdIn(ids)) {
+            ProductImage image = firstImage.get(p.getId());
+            products.put(p.getId(), new ProductForCart(p.getId(), p.getName(), p.getPrice(), p.getStockQuantity(),
+                    p.isActive(), p.getBrand() == null ? null : p.getBrand().getName(), optionsLine(p),
+                    image == null ? null : image.getUrl(), image == null ? null : image.getFraming()));
+        }
+        return products;
+    }
+
+    /**
+     * Reserves stock for an order line: true when it was taken, false when not enough is left (or the
+     * product stopped selling). Inside the order's transaction, so a later line failing puts this one
+     * back too. Callers take lines in product-id order, so two orders can't deadlock on each other's rows.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean reserveStock(UUID productId, int quantity) {
+        return productRepository.reserveStock(productId, quantity) == 1;
+    }
+
+    /** Puts an order line's stock back: its hold ran out, or the order was withdrawn or cancelled. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void releaseStock(UUID productId, int quantity) {
+        productRepository.releaseStock(productId, quantity);
+    }
+
+    /** The stock as committed right now; 0 for a product that no longer exists. */
+    @Transactional(readOnly = true)
+    public int currentStock(UUID productId) {
+        Integer stock = productRepository.currentStock(productId);
+        return stock == null ? 0 : stock;
     }
 
     @Transactional
@@ -125,6 +175,15 @@ public class ProductService {
                         imageRepository.findByProductIdOrderByPrimaryDescDisplayOrderAscIdAsc(v.getId()).stream()
                                 .findFirst().map(ProductImage::getUrl).orElse(null)))
                 .toList();
+    }
+
+    /** "Colour: Green, Size: Large", so two variants of one product can be told apart in a cart. */
+    private static String optionsLine(Product p) {
+        Map<String, Object> attrs = p.getAttributes();
+        if (attrs == null || !(attrs.get("variant") instanceof Map<?, ?> options) || options.isEmpty()) {
+            return null;
+        }
+        return options.entrySet().stream().map(e -> e.getKey() + ": " + e.getValue()).collect(Collectors.joining(", "));
     }
 
     @SuppressWarnings("unchecked")

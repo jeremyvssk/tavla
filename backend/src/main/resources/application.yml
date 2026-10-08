@@ -25,6 +25,26 @@ spring:
     redis:
       url: ${REDIS_URL}
 
+  # Stripe's payment events and the order emails each go through a queue (config/MessagingConfig).
+  rabbitmq:
+    addresses: ${RABBITMQ_URL}
+    # The webhook waits for the broker's confirm before answering Stripe (PaymentEventPublisher).
+    publisher-confirm-type: simple
+    listener:
+      simple:
+        # One consumer per queue: events are applied in the order they arrive, and there are few of them.
+        # More would be safe too: every status change takes a row lock on its order.
+        concurrency: 1
+        # After the last retry a message is rejected, never put back at the head of the queue to loop
+        # forever: RabbitMQ moves it to the queue's dead letter queue.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          # 3 tries in all, 1 s then 2 s apart, before the message is parked in the dead letter queue
+          max-retries: 2
+          initial-interval: 1s
+          multiplier: 2
+
   mail:
     host: ${SMTP_HOST}
     port: ${SMTP_PORT}
@@ -65,6 +85,8 @@ app:
     from: ${MAIL_FROM:noreply@iloveshopping.local}
   frontend:
     reset-url: ${FRONTEND_RESET_URL:http://localhost:5173/reset}
+    # Where the links in order emails point.
+    base-url: ${FRONTEND_URL:https://localhost:5443}
   cookie:
     secure: ${COOKIE_SECURE:true}
   recaptcha:
@@ -78,6 +100,24 @@ app:
     enabled: ${RATE_LIMIT_ENABLED:true}
   two-factor:
     issuer: ${TWO_FACTOR_ISSUER:i-love-shopping}
+  cart:
+    # A guest cart and its cookie live this long after the last change; GuestCartCleanup deletes older ones.
+    guest-ttl: ${CART_GUEST_TTL:P30D}
+  orders:
+    # How long an unpaid order keeps its stock reserved; OrderExpiry puts it back on sale after this.
+    payment-hold: ${ORDER_PAYMENT_HOLD:PT30M}
+    # The shop's days, for the order list's date filter and the times in emails.
+    time-zone: ${SHOP_TIME_ZONE:Europe/Tallinn}
+  # AES-256 key for the encrypted order and payment columns (crypto/FieldCipher): 32 random bytes,
+  # base64. No default on purpose: start.sh generates one into .env. A key in git encrypts nothing.
+  encryption:
+    key: ${APP_ENCRYPTION_KEY}
+  stripe:
+    # Test-mode secret key (sk_test_...). Blank: placing an order answers 503 and nothing is reserved.
+    secret-key: ${STRIPE_SECRET_KEY:}
+    # The whsec_... that `stripe listen` prints; start.sh fills it in. Blank: every webhook is refused.
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+    currency: eur
   storage:
     # The product_images_data volume; nginx serves the same directory at /images.
     images-dir: ${IMAGES_DIR:/var/app/images}

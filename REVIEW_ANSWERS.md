@@ -1,4 +1,304 @@
+# Review Answers — Project 2
+
+Start the app: `./start.sh` → shop at <https://localhost:5443> (accept the self-signed certificate once;
+<http://localhost:5173> redirects there), emails at <http://localhost:8025> (MailHog), queues at
+<http://localhost:15672> (RabbitMQ, `app` / `changeme`). Card payments need free Stripe test keys in
+`.env`: [README → Setup](README.md#setup).
+
+Run the tests:
+- Backend: `cd backend && mvn verify` (Docker must be running: the tests start PostgreSQL, Redis and RabbitMQ)
+- Frontend: `cd frontend && bunx vitest run`
+
+**Latest run (2026-10-08): 391 tests, all passing** — 171 backend unit, 145 backend integration +
+security, 75 frontend.
+
+Backend paths below are short for `backend/src/main/java/com/iloveshopping/…`. The order statuses
+and every allowed move are in [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md).
+
+---
+
+### 1. The README contains an updated overview, ERD, setup instructions and usage guide for the commerce functionality
+
+Yes. [README.md](README.md): *What works* (cart, checkout, orders, payments, the queue, emails,
+cancelling, encryption, HTTPS, and what isn't built), the new tables with a Mermaid ERD and the list of
+encrypted columns, setup with the Stripe keys, and a usage guide: test cards, the emails in MailHog,
+seeing the encryption with `psql`, seeing HTTPS, and making a message land in a dead letter queue.
+
+### 2. The database schema supports the cart, for guests and for logged-in users
+
+`V8__carts.sql`: `carts` has exactly one owner, either `user_id` (unique: one cart per account) or
+`guest_token_hash` (the SHA-256 of the guest's `cart_token` cookie), enforced by
+`CHECK ((user_id IS NULL) <> (guest_token_hash IS NULL))`. `cart_items` is one row per product per
+cart, quantity 1–10 (`CHECK`). No price column: prices are read from `products` on every read, so the
+cart can never show a stale price.
+
+### 3. The cart shows each item's name, price and thumbnail
+
+`frontend/src/components/CartPanel.tsx`, from `GET /cart` (`cart/CartService.view`). Test: `CartPanel.test.tsx`.
+
+### 4. Add, remove and change quantities, with the totals updating as you go
+
+`POST /cart/items`, `PUT` and `DELETE /cart/items/{productId}`; every answer is the whole cart with its
+new subtotal, worked out on the server in `BigDecimal`. Tests: `CartServiceTest` (unit: totals, short
+and sold-out lines, caps), `CartIT` (integration).
+
+### 5. A guest cart is saved for a while
+
+A random token in an `HttpOnly`, `SameSite=Strict` cookie finds the cart; the database keeps only its
+hash. `cart/GuestCartCleanup` deletes guest carts untouched for 30 days (`CART_GUEST_TTL`). Test: `CartIT`.
+
+### 6. A logged-in cart persists across sessions
+
+The cart belongs to `carts.user_id`, so it is the same on any browser. At sign-in the guest cart is
+merged in (`POST /cart/merge`; where both have a product, the larger quantity wins). Tests: `CartIT`
+(merge cases), `session.test.ts`.
+
+### 7. Out-of-stock is handled when adding
+
+One conditional upsert (`cart/CartItemRepository.addUpTo`) adds only while the line stays within the
+stock and the limit of 10, so two quick adds can't overshoot. Past it: `409` with how many are left,
+and the page says so. A line that sells out later is flagged `sold_out` and left out of the total.
+Tests: `CartServiceTest`, `CartIT`.
+
+### 8. Single-page checkout
+
+`/checkout` (`frontend/src/pages/CheckoutPage.tsx`): contact, address, shipping and Stripe's card form
+on one page, with the summary beside it.
+
+### 9. It collects basic information, an address and a payment choice
+
+Email and phone; name, street, flat, postcode, city, country; three shipping options priced by the
+server (`order/ShippingMethod`); and Stripe's Payment Element for the card.
+
+### 10. Known details are prefilled for logged-in users
+
+Name and email from the account; phone and address from the account's last order
+(`GET /orders/last-delivery`, `OrderService.lastDelivery`), filled only into fields still empty.
+Tests: `CheckoutPage.test.tsx` ("fills in what the account knows", "fills in the phone and address of
+the last order"), `OrderListIT.theLastDelivery_prefillsTheNextCheckout`.
+
+### 11. The shipping address is validated for accuracy
+
+In the browser (`validation/checkoutRules.ts`) and again on the server (`order/CheckoutRules.java`,
+plus Bean Validation on `PlaceOrderRequest`):
+- every field present, within its length, a house number in the street
+- the postcode's format for the country (Estonia 5 digits, Latvia `LV-1234`, …)
+- for the biggest cities, the postcode belongs to the city: `Tallinn` + `50090` is refused, because
+  every Tallinn postcode starts with 10–15 (`50090` is Tartu). Only cities whose postcodes all share
+  their first digits are listed, so a real address is never refused.
+
+What it can't do: confirm a street exists at that postcode. That needs a postal lookup service (Omniva,
+Google Address Validation), which this project doesn't use. Tests: `CheckoutRulesTest`,
+`checkoutRules.test.ts`, `OrderIT.badFields_are400_withTheFieldAndHowToFixIt_andNothingIsReserved`.
+
+### 12. An order summary with every item, quantity and cost
+
+The checkout's summary lists each line, its quantity (still changeable) and price, subtotal, shipping,
+VAT and total. The server prices the order itself (`order/OrderTotals`); the page's numbers are only a preview.
+
+### 13. An email confirmation after a successful order
+
+When Stripe confirms the payment, the order consumer queues a confirmation email; `order/OrderMail`
+sends it with the items, totals, VAT, card, delivery address and a link to the order. Test:
+`MessagingIT.aPayment_isConfirmedByEmail_toTheAddressOnTheOrder`, `OrderMailTest`. See it in MailHog.
+
+### 14–15. Clear errors for invalid input and failed payments: missing fields, bad email, phone or address, payment validation, network errors
+
+Every message says how to fix it ("Enter the full number with the country code, like +372 5123 4567").
+They show next to the field and in a summary at the top that moves the focus. A bad card stops in
+Stripe's form before any order exists; a declined card shows the bank's reason; a lost connection
+keeps everything typed and says nothing was charged. Tests: `CheckoutPage.test.tsx`,
+`checkoutRules.test.ts`, `OrderIT.badFields_…`, `PaymentFailuresTest`.
+
+### 16. Stripe sandbox
+
+Stripe test mode: `payment/StripePaymentGateway` (stripe-java), one PaymentIntent per order, the Stripe
+CLI in a container forwarding webhooks. Test cards: [README](README.md#test-cards).
+
+### 17. The payment form uses the provider's secure elements
+
+Stripe's Payment Element (`frontend/src/components/CardPayment.tsx`) runs in Stripe's own iframe; card
+details go from the browser straight to Stripe. The server only sees the PaymentIntent id, and later
+the card brand and last 4 digits.
+
+### 18. Card number, expiry and CVC are checked before submitting
+
+`elements.submit()` validates the card fields inside Stripe's frame before the order is placed.
+Test: `CheckoutPage.test.tsx` ("stops at a card Stripe finds wrong, before any order exists").
+
+### 19. Explain PCI DSS, and why card data shouldn't be stored on the server
+
+PCI DSS is the card industry's security standard for anyone who stores, processes or transmits card
+data. Every system that touches a card number is "in scope": it must be locked down, logged, scanned
+and audited, and a breach can cost fines and the right to take cards at all (Heartland). Using
+Stripe's hosted fields, the number never touches our servers, so we qualify for the simplest
+self-assessment (SAQ A). We store no card number, expiry or CVC — there are no such columns — only
+Stripe's payment id and the brand and last 4 for the receipt, and those are encrypted too. A breach of
+our database leaks no usable card. This is **tokenization**: the PaymentIntent and its client secret
+stand in for the card.
+
+### 20. The order status follows the provider's callbacks, for success and failure
+
+Only Stripe's signed webhook moves an order to *Payment successful* or *Payment failed*; the browser
+never decides. A bad signature is `400` and changes nothing. Each event is applied once
+(`processed_payment_events`). Tests: `OrderIT.aSignedInCheckout_goesFromCartToPaid_onlyWhenStripeSaysSo`,
+`aBadOrMissingSignature_is400_andChangesNothing`, `theSameEventTwice_isAppliedOnce`.
+
+### 21. Payment status updates are published to a message queue
+
+`payment/PaymentWebhookController` checks the signature, then `PaymentEventPublisher` publishes a
+`PaymentEvent` to RabbitMQ (exchange `payments` → queue `orders.payment-events`) and waits for the
+broker's publisher confirm before answering Stripe 200. If RabbitMQ is down the webhook answers 503 and
+Stripe sends it again. `order/PaymentEventListener` (the order service) consumes it and updates the
+order, stock and history in one transaction — the brief's diagram. Tests: `MessagingIT`,
+`PaymentEventPublisherTest`, and every webhook test in `OrderIT` goes through the real queue.
+
+### 22. Emails for both successful and failed payments
+
+Paid → confirmation; declined → "the payment didn't go through", with the reason and until when the
+items are held; also cancelled and refunded. Queued only after the order's transaction commits
+(`order/OrderNotifier`), on their own queue `orders.emails`. Tests: `MessagingIT`, `OrderMailTest`,
+`OrderCancelIT`.
+
+### 23–24. Responds to payment failures: insufficient funds, invalid card number, expired card, gateway timeout
+
+- insufficient funds, expired card, wrong CVC: Stripe's decline code → a plain sentence
+  (`payment/PaymentFailures`), shown on the order page and in the email; the shopper can try another
+  card on the same order while the items are held
+- invalid card number: Stripe's form refuses it before anything is sent
+- gateway timeout: Stripe unreachable when placing → the order is withdrawn, stock and cart restored,
+  `503`, nothing charged. A timeout later leaves the order pending; the expiry job asks Stripe for the
+  real status before releasing anything
+Tests: `OrderIT.theFourFailuresTheBriefNames_eachReachTheOrderPage`,
+`whenStripeCantBeReached_theOrderIsWithdrawn_andEverythingGoesBack`, `anExpiredHold_staysPut_whileStripeCantBeAsked`.
+
+### 25–26. No overselling, even with simultaneous payments
+
+Stock is taken when the order is placed, with one statement:
+`UPDATE products SET stock_quantity = stock_quantity - n WHERE id = ? AND stock_quantity >= n`. Zero rows
+changed means sold out, and the whole order rolls back. Lines are locked in product-id order so two
+orders can't deadlock, and `CHECK (stock_quantity >= 0)` is the safety net. Test:
+`OrderIT.twoBuyersForTheLastOne_exactlyOneGetsIt_andStockNeverGoesBelowZero` (two threads, five rounds).
+
+### 27. Filter and sort orders by date and status
+
+`/account/orders`; `GET /orders?status=&from=&to=&sort=&page=&size=`. Filters and sorting happen in SQL,
+a page at a time (`OrderRepository.findPageForUser`); the sort is a bound parameter checked against a
+fixed list, never text in `ORDER BY`. The filter pills show counts per status. Tests: `OrderListIT`
+(filters, date range, sorts, paging, only your own orders, bad parameters → 400), `OrderPages.test.tsx`.
+
+### 28. The order page shows everything, with status updates
+
+`/account/orders/:id`: progress tracker, items, totals, delivery, payment, refund, and the status
+history from `order_status_history` (every move, who made it, and why). Someone else's order is `404`.
+
+### 29. Cancelling unprocessed orders, with a refund workflow
+
+Allowed only in *Payment successful*; once packing starts (*Processing*) the server answers `409`
+whatever the page shows. One transaction: *Cancelled*, stock back on sale, payment marked
+`REFUND_DUE`. Then Stripe is asked for the refund, with `refund-{orderId}` as the idempotency key, so a
+double click or a retry can't refund twice. Stripe's answer, or its `charge.refunded` webhook, moves
+the order to *Refunded*. If Stripe is down, the order stays cancelled and `order/RefundRetry` asks
+again every minute. Tests: `OrderCancelIT` (refund, pending refund finished by webhook, Stripe down,
+refused when processing or unpaid, double click refunds once, owner only).
+
+### 30. Stock goes down when orders are placed and back up when they are cancelled
+
+Down: the reserving `UPDATE` above. Up: `ProductService.releaseStock`, in the same transaction as the
+cancellation, and also when an unpaid order's 30-minute hold runs out. Tests:
+`OrderCancelIT.cancellingAPaidOrder_putsTheStockBack_refundsTheCard_andSaysSoInTheHistory`,
+`OrderIT.anUnpaidOrderPastItsHold_isCancelled_atStripeToo_andTheStockAndCartComeBack`.
+
+### 31–32. Sensitive data is encrypted at rest: order details, shipping addresses, payment records
+
+AES-256-GCM, through a JPA converter (`crypto/FieldCipher`, `crypto/Encrypted`):
+- `orders`: email, phone, first and last name, street, flat, postcode, city
+- `order_items`: product name, options, photo (what was bought)
+- `payments`: Stripe payment id, card brand, last 4, decline code
+
+Each value gets a fresh random 12-byte IV, so equal values look different, and a 16-byte tag, so a
+changed byte fails to decrypt instead of decrypting to something else. The key (`APP_ENCRYPTION_KEY`)
+is generated by `start.sh` into `.env`; it is never in git or the database. Ids, statuses, dates,
+totals and the country stay plain because queries filter and sort on them.
+
+**Manual check (at rest):** place an order, then
+`docker compose exec postgres psql -U app -d iloveshopping -c "SELECT number, first_name, street, city, total FROM orders"`:
+names and addresses are `v1:…` ciphertext, the website shows them normally.
+**Manual check (in transit):** <https://localhost:5443> is TLS 1.2/1.3 (the padlock, or
+`curl -kIv https://localhost:5443`); `curl -I http://localhost:5173` answers `301` to https; the refresh
+cookie is `Secure`. Tests: `EncryptionIT` (ciphertext in all three tables, plain text in the API,
+tampering detected), `FieldCipherTest`.
+
+### 33. Explain the approach to testing the cart, checkout and payments
+
+Three layers. **Unit tests** pin the arithmetic and rules, fast and with no database: cart totals and
+caps (`CartServiceTest`), order totals, the €100 free-shipping line and VAT rounding
+(`OrderTotalsTest`), the status table (`OrderStatusTest`), address rules, email wording, the cipher.
+**Flow tests** run the real app against real PostgreSQL, Redis and RabbitMQ (Testcontainers), with
+only Stripe and the mail server replaced: checkout from cart to paid as a guest and signed in, every
+webhook signed the way Stripe signs it and going through the real queue. **Pressure tests** cover what
+only breaks under stress: two buyers for the last item, the same webhook twice (also at once), a
+double-clicked Pay and Cancel, a poison message, a dead mail server.
+
+What a green suite still doesn't prove: real Stripe timing and 3-D Secure (only trying the test cards
+by hand shows that), many buyers at once rather than two, and the moment between a commit and RabbitMQ
+going down (that one email would be lost; an outbox table would close it).
+
+### 34. Automated tests exist: unit (cart, order calculations) and critical flows (registration, checkout)
+
+- Unit: `CartServiceTest` (cart), `OrderTotalsTest` (order calculations)
+- Registration flow: `AuthControllerIT.register_succeeds_thenDuplicateEmailConflicts` (the second sign-up
+  with the same email is refused, so the first was stored), `register_withInvalidBody_returns400WithFieldErrors`,
+  `RegisterPage.test.tsx`
+- Checkout flow: `OrderIT.aGuestOrder_reservesTheStock_copiesTheCart_andEmptiesIt` and `aSignedInCheckout_goesFromCartToPaid_onlyWhenStripeSaysSo`,
+  plus `CheckoutPage.test.tsx` in the browser
+
+### 35. Explain and demonstrate the tests
+
+`cd backend && mvn verify` runs all 316 backend tests in a few minutes; a single class:
+`mvn verify -Dit.test=OrderCancelIT -Dtest=NoSuchTest -Dsurefire.failIfNoSpecifiedTests=false`.
+`cd frontend && bunx vitest run` runs the 75 frontend tests in seconds. A good one to show:
+`OrderIT.twoBuyersForTheLastOne_…` — start two threads at the same instant, exactly one gets `201`,
+the other `409`, stock ends at 0, never −1.
+
+## Extra
+
+### Cart quality, UX, and persistence across guest and logged-in
+
+Server cart for both; the merge at sign-in never doubles a line; sold-out and short lines are shown,
+not silently dropped; recommendations from the same game.
+
+### Checkout flow, error handling and guidance
+
+One page, prefilled, every error with a fix, the focus moved to the summary of errors, input kept on
+any failure, and the waiting page that never claims "paid" before Stripe says so.
+
+### Payment security, transaction handling, response to payment scenarios
+
+No card data on our side; signed webhooks only; one PaymentIntent per order (idempotency key), so a
+retry never charges twice; two short transactions around every Stripe call, so no row lock waits on
+the network; a lost webhook settled by asking Stripe.
+
+### Order management, status tracking, message queue
+
+The state machine with a single gate (`Order.moveTo`) and a full history; two durable queues, each
+with retries and a dead letter queue; idempotent consumer; emails only after commit; no personal data
+in messages. Try: RabbitMQ → `orders.payment-events` → *Publish message* `not json` → it lands in
+`orders.payment-events.dlq`.
+
+### Docker, and only Docker and the payment CLI as prerequisites
+
+`./start.sh` builds and runs 7 containers (website, server, PostgreSQL, Redis, RabbitMQ, MailHog,
+Stripe CLI). The Stripe CLI itself runs in a container, so Docker really is the only thing to install.
+
+---
+
 # Review Answers — Project 1
+
+As answered at the Project 1 review (2026-09-28); counts and container numbers are from then.
+
+<details>
+<summary><b>Show the Project 1 answers</b></summary>
 
 Start the app: `./start.sh` → app at <http://localhost:5173>, emails at <http://localhost:8025> (MailHog).
 
@@ -112,7 +412,7 @@ Tests: `PasswordResetServiceTest`, `PasswordResetControllerIT`.
 ### 11. Two-factor authentication (2FA) is available as an optional, user-enabled feature.
 
 Yes. It's off until the user turns it on in `/account`.
-1. **Setup:** confirm your password, then a QR code appears. Scan it from inside Google Authenticator or Authy. On an iPhone, the Passwords app also works, but only after you save an entry with website `localhost` (full steps in the [README](README.md#in-the-website)).
+1. **Setup:** confirm your password, then a QR code appears. Scan it from inside Google Authenticator or Authy. On an iPhone, the Passwords app also works, but only after you save an entry with website `localhost` (full steps in the [README](README.md#setting-up-two-factor-login)).
 2. **Enable:** enter the 6-digit code from the app, not the long setup key. You get 8 backup codes, shown once only.
 3. **Login:** the password step now returns a 5-minute challenge instead of tokens. Tokens are issued only after a valid code. Backup codes work once each.
 4. **Disable:** needs your password.
@@ -304,3 +604,5 @@ Yes. `docker-compose.yml` runs 5 containers: postgres, redis, mailhog, backend a
 ### 30. The project uses Docker to containerize the application and its dependencies. Docker is the only host prerequisite - all other dependencies are managed within containers.
 
 Yes. Java, Maven, Bun and Node only exist inside the Docker build images. The Python scripts in `tools/catalog-import` aren't needed either, because the SQL they produced is committed. With nothing but Docker installed: `./start.sh`. The only exception is running the test suites directly on your machine, which needs Java 21, Maven and Bun.
+
+</details>

@@ -3,9 +3,10 @@
 B2C e-commerce platform. Demo catalog: ~1,770 real chess, Go and backgammon products imported from
 three suppliers by the Python scripts in `tools/catalog-import` (a dev-only tool; the generated SQL
 seed is committed, so Docker stays the only prerequisite). School project in 3 parts.
-**Current scope: Project 1** — auth, database, product catalog.
+**Current scope: Project 2** — cart, checkout, Stripe payments, orders. Project 1 (auth, database,
+product catalog) is done.
 
-The assignment brief and its review checklist are in [docs/ASSIGNMENT.md](docs/ASSIGNMENT.md).
+The assignment brief and its review checklist are in [docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md).
 [README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
 **What works** section honest; a README claiming unbuilt features is worse than no README. It is
 written for non-experts: plain language, short, no design essays. The detail lives elsewhere:
@@ -79,6 +80,7 @@ coming back to ask whether it worked.
 | ORM + migrations | Spring Data JPA + Flyway (plain SQL files, run on startup) |
 | Database | PostgreSQL 16 (ACID, JSONB, built-in full-text search) |
 | Token store | Redis 7 (refresh tokens, access token blocklist) |
+| Message queue | RabbitMQ 4: Stripe's payment events and the order emails, each with a dead letter queue |
 | Email (dev) | MailHog in docker-compose |
 | Containers | Docker + docker-compose (one-command startup) |
 | Backend tests | JUnit 5 + Mockito + Testcontainers |
@@ -90,7 +92,7 @@ Modular monolith — single Spring Boot app, code split by domain not layer.
 Each domain owns its own controller/service/repository/entity.
 Cross-domain calls through service interfaces only (no repo-to-repo).
 
-Domains (P1): `user`, `auth`, `catalog`
+Domains: `user`, `auth`, `catalog` (P1), `cart`, `order`, `payment` (P2)
 
 ## Folder Structure
 
@@ -157,6 +159,34 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
   title, body, verified_purchase, created_at
   *(needed in P1: faceted search + sorting by rating requires real data)*
 
+**carts** — id UUID, user_id FK unique (null for guests), guest_token_hash unique (null for users),
+  created_at, updated_at; exactly one owner (CHECK)
+
+**cart_items** — cart_id FK, product_id FK, quantity INT (1-10), added_at; PK (cart_id, product_id).
+  No price: read from products on every cart read
+
+**orders** — id UUID, number unique (TV-10001), user_id FK or guest_token_hash (exactly one), status
+  (state machine in [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md)), contact + address
+  (encrypted), shipping_method, subtotal/shipping_cost/vat/total NUMERIC(10,2), hold_until, placed_at,
+  status_changed_at
+
+**order_items** — order_id FK, product_id FK (SET NULL), position, snapshot of name/options/image (encrypted)
+  and unit_price, quantity, line_total
+
+**order_status_history** — order_id FK, from_status, to_status, actor (SHOPPER/STRIPE/TIMER/ADMIN), note, created_at
+
+**payments** — order_id FK unique, provider_payment_id (Stripe PaymentIntent), amount, currency,
+  status (STARTED/SUCCEEDED/FAILED/CANCELED/REFUND_DUE/REFUNDING/REFUNDED), card_brand, card_last4,
+  failure_code. Never card numbers
+
+*Encrypted columns* (V10): AES-256-GCM via the `Encrypted` JPA converter (`crypto/`), key in
+`APP_ENCRYPTION_KEY`, stored as `v1:` + base64. Native SQL bypasses the converter, so code writing these
+columns natively encrypts with `FieldCipher` itself. Never filter, sort or join on an encrypted column.
+
+**processed_payment_events** — event_id PK (Stripe event ids already applied)
+
+`products` has `CHECK (stock_quantity >= 0)` since V9; stock is reserved at order placement.
+
 **Redis keys** (full table in [backend/README.md](backend/README.md#where-data-is-stored)):
 - `refresh_token:{hash}` → user_id, TTL 7 days
 - `refresh_tokens_user:{userId}` → Set of hashes (for "revoke all on password reset")
@@ -176,8 +206,9 @@ revoke-all on reset, the 2FA challenge key, no PII in the payload — and they l
 work. These are the ones that live outside that file:
 
 - Access token: JS module variable only. Never localStorage/sessionStorage.
-  On page reload → call `/auth/refresh` on mount to rehydrate. The cart is the only thing in
-  localStorage (`tavla.cart`) — it holds no secrets.
+  On page reload → call `/auth/refresh` on mount to rehydrate. Nothing is in localStorage; the cart
+  is on the server, and a guest's is found by the `cart_token` cookie (HttpOnly, SameSite=Strict,
+  stored as a SHA-256 hash in `carts`).
 - 2FA setup returns an `otpauth://` URI for the client to render as a QR code. The 8 backup codes
   are shown once and never again.
 - GDPR: UserService must support hard delete (cascade) and a data export endpoint.

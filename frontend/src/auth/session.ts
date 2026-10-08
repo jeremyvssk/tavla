@@ -1,5 +1,6 @@
 // Session lifecycle: restore on page load, start after any login flow, end on logout.
 import * as authApi from '../api/auth';
+import { mergeGuestCart } from '../api/cart';
 import { refreshAccessToken, setAccessToken } from '../api/client';
 import type { AppDispatch } from '../store';
 import { signedIn, signedOut } from '../store/authSlice';
@@ -15,9 +16,14 @@ export async function restoreSession(dispatch: AppDispatch) {
   }
 }
 
-/** Every successful login path (password, 2FA, Google) ends here with an access token. */
+/**
+ * Every successful login path (password, 2FA, Google) ends here with an access token. The guest cart
+ * is merged before the shopper counts as signed in, so the first read of the account's cart has it.
+ * A failed merge doesn't stop the sign-in: the guest lines just stay in the guest cart.
+ */
 export async function startSession(dispatch: AppDispatch, accessToken: string) {
   setAccessToken(accessToken);
+  await mergeGuestCart().catch(() => undefined);
   dispatch(signedIn(await authApi.fetchMe()));
 }
 

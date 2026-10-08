@@ -84,5 +84,7 @@ Check these off against reality before claiming a suite is complete:
 
 - Frontend: catalog and account pages have no component tests yet (auth forms, validation rules
   and the refresh interceptor landed 2026-09-15)
-- Integration tests extend `support/AbstractIntegrationTest` (one shared Postgres + Redis);
-  catalog tests use `support/CatalogTestSupport` for admin/customer tokens and isolated data
+- Integration tests extend `support/AbstractIntegrationTest` (one shared Postgres + Redis +
+  RabbitMQ, queue consumers off); catalog tests use `support/CatalogTestSupport` for admin/customer
+  tokens and isolated data; order tests use `support/OrderTestSupport`, the only context whose queue
+  consumers run (mock Stripe and mail; `deliver()` waits for the consumer)

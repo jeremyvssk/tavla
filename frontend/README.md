@@ -3,7 +3,8 @@
 The website for i-love-shopping: React 18 and TypeScript, built with Vite and managed with Bun.
 
 You don't need to run anything in this folder to use the site. `./start.sh` in the project root
-builds it, and nginx serves it at <http://localhost:5173>. This page explains where things live.
+builds it, and nginx serves it over HTTPS at <https://localhost:5443> (<http://localhost:5173> redirects
+there). This page explains where things live.
 Every file starts with a one-line comment saying what it does.
 
 ---
@@ -15,12 +16,12 @@ Every file starts with a one-line comment saying what it does.
 | `main.tsx` | Starting point: wraps the app in Redux, React Query and the router |
 | `App.tsx` | The list of pages (routes), and restoring the login after a page reload |
 | `pages/` | One file per page (see below) |
-| `components/` | Pieces used on several pages: header and footer (`Layout`), search box, product cards, cart panel, form fields, the CAPTCHA and Google buttons |
-| `api/` | Every call to the backend. `client.ts` is the shared Axios setup |
+| `components/` | Pieces used on several pages: header and footer (`Layout`), search box, product cards, cart panel, form fields, the CAPTCHA and Google buttons, Stripe's card form (`CardPayment`), and the order pages' shared parts (`OrderParts`: status pill, progress tracker, totals) |
+| `api/` | Every call to the backend. `client.ts` is the shared Axios setup. `orders.ts` covers placing, reading, paying again, the account's list, cancelling, and the last delivery details |
 | `auth/session.ts` | Starting, restoring and ending a login session |
-| `store/` | Redux state: who is logged in (`authSlice`) and the cart (`cartSlice`) |
-| `validation/` | Form rules (email format, password length...), copied from the backend's rules |
-| `hooks/`, `lib/` | Small helpers: delaying search input, loading Google's scripts, formatting prices, picking colour/size variants, placing a photo on its tile (`framing.ts`, used by `components/Photo.tsx`) |
+| `store/` | Redux state: who is logged in (`authSlice`) and whether the cart panel is open (`cartSlice`) |
+| `validation/` | Form rules (email format, password length...), copied from the backend's rules, and the checkout's rules (`checkoutRules.ts`) |
+| `hooks/`, `lib/` | Small helpers: the cart from the server (`useCart.ts`), delaying search input, loading Google's scripts, formatting prices, picking colour/size variants, placing a photo on its tile (`framing.ts`, used by `components/Photo.tsx`), shipping options and delivery dates (`shipping.ts`), how each order status looks (`orderStatus.ts`), loading Stripe.js (`stripe.ts`) |
 | `test/` | Test setup and a helper that renders a page with everything it needs |
 | `index.css` | All styles and colours |
 
@@ -34,9 +35,24 @@ Every file starts with a one-line comment saying what it does.
 | `/login`, `/register` | `LoginPage`, `RegisterPage` | Log in (plus the 2FA step) and sign up |
 | `/forgot`, `/reset` | `ForgotPasswordPage`, `ResetPasswordPage` | Password reset |
 | `/account` | `AccountPage` | Profile and two-factor setup. Logged-in users only |
+| `/checkout` | `CheckoutPage` | One-page checkout: contact, address, shipping, Stripe's card form, and the order summary. Has its own slim header |
+| `/checkout/:orderId` | `OrderStatusPage` | After Pay: waiting for the payment result, then confirmed, or failed with another card to try. A guest cancels a paid order here (the link in their email leads here) |
+| `/account/orders` | `OrdersPage` | Your orders, filtered by status and date, sorted. Logged-in users only |
+| `/account/orders/:orderId` | `OrderPage` | One order: progress, items, delivery, history, and cancelling. Logged-in users only |
 
-Page addresses never start with an API path like `/products` or `/auth`. Those paths go to the
-backend, not to the website.
+The checkout fills in a signed-in shopper's name and email from the account, and the phone and
+address from their last order (`GET /orders/last-delivery`), only into fields still empty.
+`validation/checkoutRules.ts` checks the postcode's format per country, and for the biggest cities
+that it belongs to the city; the backend's `CheckoutRules` checks the same.
+
+**Paying.** The card form is Stripe's Payment Element, in an iframe served by Stripe, so card details
+never pass through this app's code or server. Pressing Pay: Stripe checks the card fields
+(`elements.submit()`), the order is placed (`POST /orders`, which answers with a client secret), then
+Stripe.js confirms the payment with it. The order page then asks the server for the status every 2
+seconds until Stripe's webhook has set it. The browser never decides that an order is paid.
+
+Page addresses never start with an API path like `/products`, `/auth`, `/cart` or `/orders`.
+Those paths go to the backend, not to the website.
 
 ---
 
@@ -50,9 +66,11 @@ backend, not to the website.
 - **When a token expires**, `client.ts` gets a new one and retries the request. If several requests
   fail at once, they share a single refresh.
 
-**Data from the server** (products, reviews, categories) is loaded and cached with **React Query**.
-**The cart** lives in Redux and is saved to `localStorage`. It holds no secrets and has no server
-side until checkout exists (Project 2).
+**Data from the server** (products, reviews, categories, the cart) is loaded and cached with
+**React Query**. **The cart** lives on the server (`hooks/useCart.ts`). A guest's cart is found by a
+cookie JavaScript can't read, and a logged-in user's by their account. Each change sends one
+request, and the server answers with the whole cart. Right after any login, `auth/session.ts` asks
+the server to merge the guest cart into the account's (`POST /cart/merge`).
 
 ---
 
@@ -70,7 +88,9 @@ The dev server forwards API calls to the backend on port 8080, the same way ngin
 
 Google login and CAPTCHA appear only when `VITE_GOOGLE_CLIENT_ID` and `VITE_RECAPTCHA_SITE_KEY`
 are set. With Docker, these come from `GOOGLE_CLIENT_ID` and `RECAPTCHA_SITE_KEY` in the root
-`.env`. See the main [README](../README.md#needs-your-own-google-keys).
+`.env`. See the main [README](../README.md#needs-your-own-google-keys). The card form needs
+`VITE_STRIPE_PUBLISHABLE_KEY` the same way (from `STRIPE_PUBLISHABLE_KEY`, see
+[Setup](../README.md#setup)).
 
 ## Tests
 
@@ -81,13 +101,19 @@ bunx vitest run      # run once
 
 Use `bun run test`, not `bun test`, which starts Bun's own test runner instead of Vitest.
 
-Test files sit next to the file they test (`*.test.ts`, `*.test.tsx`):
+Test files sit next to the file they test (`*.test.ts`, `*.test.tsx`). Stripe's form can't run in
+jsdom, so the checkout and order tests swap `components/CardPayment` for a stand-in.
 
 | Test | Checks |
 |---|---|
 | `validation/authRules.test.ts` | The form rules at their exact limits |
 | `pages/LoginPage.test.tsx`, `RegisterPage.test.tsx` | Error messages, the button locking while waiting, server errors, the 2FA step |
 | `api/client.test.ts` | Expired tokens are refreshed once, even when several requests fail together |
-| `store/cartSlice.test.ts` | Cart rules: merging items, stock limits, totals |
+| `components/CartPanel.test.tsx` | The cart panel: lines and prices from the server, a sold-out line left out of the total, recommendations, a refused quantity explained |
+| `pages/CheckoutPage.test.tsx` | Details filled in for logged-in users (the account, and the last order's phone and address), every field to fix listed before paying, a card Stripe finds wrong stopping before any order, Pay placing the order and confirming it with Stripe, a lost connection or a down payment provider keeping what was typed |
+| `pages/OrderPages.test.tsx` | Order filters sent to the server, cancelling only after asking, where the refund stands, a guest cancelling from the confirmation page, the waiting page turning into thank-you, another card on a failed order |
+| `auth/session.test.ts` | The guest cart is merged before the shopper counts as signed in; a failed merge doesn't block sign-in |
+| `validation/checkoutRules.test.ts` | The checkout's messages for missing fields, a bad email, phone, street or postcode, and a postcode from another city |
+| `lib/shipping.test.ts` | Free shipping from €100, VAT inside the total, delivery dates that skip weekends |
 | `lib/variants.test.ts` | Picking the right product when you switch colour or size |
 | `lib/framing.test.ts` | Placing a photo: uncut products centred, cut edges on the tile edge, book covers whole |

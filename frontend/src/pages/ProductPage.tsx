@@ -2,6 +2,7 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { LINE_LIMIT, stockConflictOf, stockMessage } from '../api/cart';
 import { fetchProduct, fetchReviews, postReview, ProductDetail, ProductVariant, searchProducts } from '../api/catalog';
 import { toApiError } from '../api/errors';
 import Field from '../components/Field';
@@ -9,10 +10,11 @@ import Icon, { Perks } from '../components/Icon';
 import Photo from '../components/Photo';
 import ProductRow from '../components/ProductRow';
 import Stars from '../components/Stars';
+import { useCart, useCartActions } from '../hooks/useCart';
 import { formatPrice } from '../lib/format';
 import { axesOf, variantFor } from '../lib/variants';
 import { useAppDispatch, useAppSelector } from '../store';
-import { added, LINE_LIMIT, opened } from '../store/cartSlice';
+import { opened } from '../store/cartSlice';
 
 export default function ProductPage() {
   const { id = '' } = useParams();
@@ -293,9 +295,13 @@ function Viewer({ name, images, at, onStep, onPick, onClose }: {
 
 // Add to cart, one at a time: the cart panel it opens has the quantity stepper, so the page keeps one
 // clear button. On a phone the button rides the bottom of the screen until the page scrolls to its place.
+// The server has the last word on stock: a refused add says why under the button.
 function Buy({ product }: { product: ProductDetail }) {
   const dispatch = useAppDispatch();
-  const inCart = useAppSelector((s) => s.cart.lines.find((l) => l.productId === product.id)?.quantity ?? 0);
+  const { cart } = useCart();
+  const { add } = useCartActions();
+  const [problem, setProblem] = useState<string | null>(null);
+  const inCart = cart.lines.find((l) => l.productId === product.id)?.quantity ?? 0;
   // stops where the cart would: stock and the per-line limit, minus what is already in the cart
   const room = Math.max(0, Math.min(product.stockQuantity, LINE_LIMIT) - inCart);
 
@@ -303,28 +309,23 @@ function Buy({ product }: { product: ProductDetail }) {
     return <div className="pd-buy"><button type="button" className="btn btn--buy" disabled>Out of stock</button></div>;
   }
 
-  function add() {
-    const current = product.variants.find((v) => v.id === product.id);
-    dispatch(added({
-      productId: product.id,
-      name: product.name,
-      brandName: product.brand?.name ?? null,
-      options: current && product.variants.length > 1
-        ? Object.entries(current.options).map(([axis, value]) => `${axis}: ${value}`).join(', ') : null,
-      imageUrl: product.images[0]?.url ?? null,
-      imageFraming: product.images[0]?.framing ?? null,
-      price: product.price,
-      quantity: 1,
-      maxQuantity: product.stockQuantity,
-    }));
-    dispatch(opened());
+  function addOne() {
+    setProblem(null);
+    add.mutate({ productId: product.id }, {
+      onSuccess: () => dispatch(opened()),
+      onError: (err) => {
+        const conflict = stockConflictOf(err);
+        setProblem(conflict ? stockMessage(conflict) : toApiError(err).message);
+      },
+    });
   }
 
   return (
     <div className="pd-buy">
-      <button type="button" className="btn btn--buy" disabled={room === 0} onClick={add}>
-        <Icon name="bag" width={2} />{room === 0 ? 'All in your cart' : 'Add to cart'}
+      <button type="button" className="btn btn--buy" disabled={room === 0 || add.isPending} onClick={addOne}>
+        <Icon name="bag" width={2} />{room === 0 ? 'All in your cart' : add.isPending ? 'Adding…' : 'Add to cart'}
       </button>
+      {problem && <p className="field__error" role="alert">{problem}</p>}
     </div>
   );
 }

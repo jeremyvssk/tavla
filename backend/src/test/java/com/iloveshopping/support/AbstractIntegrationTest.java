@@ -1,4 +1,4 @@
-// Shared base for *IT classes: one Postgres and one Redis container for the whole test JVM, plus MockMvc.
+// Shared base for *IT classes: one Postgres, Redis and RabbitMQ container for the whole test JVM, plus MockMvc.
 package com.iloveshopping.support;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.RabbitMQContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import java.io.IOException;
@@ -23,24 +24,30 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 
 /**
  * Containers are started once in a static block and never stopped explicitly; they die with the
- * JVM. Every subclass reuses them, so a full `mvn verify` starts one pair instead of one per class.
+ * JVM. Every subclass reuses them, so a full `mvn verify` starts one set instead of one per class.
  * Spring still caches one application context per distinct set of @MockitoBean overrides, but
- * those contexts all point at the same two containers.
+ * those contexts all point at the same containers. RabbitMQ is real too: the payment events and
+ * the order emails go through its queues in tests exactly as they do in the app.
  */
 @SpringBootTest
 // Every IT arrives from 127.0.0.1 and many register users, so limits are off by default. A
 // @TestPropertySource rather than a dynamic property, because a subclass can override it: RateLimitIT does.
-@TestPropertySource(properties = "app.rate-limit.enabled=false")
+// The queue consumers are off too: every cached context would otherwise consume from the same RabbitMQ
+// and take another class's messages. OrderTestSupport turns them on for the one context that needs them.
+@TestPropertySource(properties = {"app.rate-limit.enabled=false", "spring.rabbitmq.listener.simple.auto-startup=false"})
 public abstract class AbstractIntegrationTest {
 
     protected static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
     protected static final GenericContainer<?> redis =
             new GenericContainer<>(DockerImageName.parse("redis:7-alpine")).withExposedPorts(6379);
+    protected static final RabbitMQContainer rabbit = new RabbitMQContainer(
+            DockerImageName.parse("rabbitmq:4.1.8-management-alpine").asCompatibleSubstituteFor("rabbitmq"));
     protected static final Path imagesDir;
 
     static {
         postgres.start();
         redis.start();
+        rabbit.start();
         try {
             imagesDir = Files.createTempDirectory("ils-images-");
         } catch (IOException e) {
@@ -61,6 +68,11 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.mail.host", () -> "localhost");
         registry.add("spring.mail.port", () -> "1025");
         registry.add("app.storage.images-dir", imagesDir::toString);
+        registry.add("spring.rabbitmq.addresses", rabbit::getAmqpUrl);
+        // a failing message is retried quickly here, so a test that sends one to the dead letter queue is fast
+        registry.add("spring.rabbitmq.listener.simple.retry.initial-interval", () -> "50ms");
+        // 32 zero bytes: a key for tests only, never used to encrypt anything real
+        registry.add("app.encryption.key", () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
     }
 
     @Autowired

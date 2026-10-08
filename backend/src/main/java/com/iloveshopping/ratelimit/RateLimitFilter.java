@@ -39,7 +39,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
             // A search is six queries. The limits are well above a person clicking facets or
             // typing into a debounced search box, and well below a script looping on the endpoint.
             new Rule("GET", "/products", 120, Duration.ofMinutes(1)),
-            new Rule("GET", "/search/suggestions", 120, Duration.ofMinutes(1)));
+            new Rule("GET", "/search/suggestions", 120, Duration.ofMinutes(1)),
+            // Each add without a cookie makes a guest cart row; a person adds a few items a minute.
+            new Rule("POST", "/cart/items", 60, Duration.ofMinutes(1)),
+            // Every order holds its stock for half an hour, so a script placing orders it never pays
+            // could empty the shelves. Ten in ten minutes is far above a person checking out.
+            new Rule("POST", "/orders", 10, Duration.ofMinutes(10)));
 
     private final RateLimiter rateLimiter;
     private final boolean enabled;

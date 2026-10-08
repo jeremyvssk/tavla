@@ -7,9 +7,13 @@ import Layout from './components/Layout';
 import RequireAuth from './components/RequireAuth';
 import AccountPage from './pages/AccountPage';
 import CatalogPage from './pages/CatalogPage';
+import CheckoutPage from './pages/CheckoutPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
+import OrderPage from './pages/OrderPage';
+import OrdersPage from './pages/OrdersPage';
+import OrderStatusPage from './pages/OrderStatusPage';
 import ProductPage from './pages/ProductPage';
 import RegisterPage from './pages/RegisterPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -26,6 +30,9 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Checkout has its own slim header: no menu or search to wander off to. Not /orders or /cart,
+          which nginx sends to the backend. */}
+      <Route path="checkout" element={<CheckoutPage />} />
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         {/* Not /products: nginx sends that path to the backend, so a reload there would show JSON. */}
@@ -37,6 +44,10 @@ export default function App() {
         {/* The password-reset email links here (FRONTEND_RESET_URL). */}
         <Route path="reset" element={<ResetPasswordPage />} />
         <Route path="account" element={<RequireAuth><AccountPage /></RequireAuth>} />
+        <Route path="account/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
+        <Route path="account/orders/:orderId" element={<RequireAuth><OrderPage /></RequireAuth>} />
+        {/* where Pay lands, and Stripe's return_url: waiting, then confirmed or failed; guests too */}
+        <Route path="checkout/:orderId" element={<OrderStatusPage />} />
         <Route
           path="*"
           element={

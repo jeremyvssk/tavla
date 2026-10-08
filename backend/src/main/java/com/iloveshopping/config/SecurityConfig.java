@@ -47,6 +47,19 @@ public class SecurityConfig {
                                 "/products", "/products/**", "/categories", "/categories/**",
                                 "/brands", "/brands/**", "/search/**")
                         .permitAll()
+                        // Merging a guest cart into an account needs the account.
+                        .requestMatchers(HttpMethod.POST, "/cart/merge").authenticated()
+                        // The cart serves guests too: CartController picks the account's cart when a token is
+                        // present and the guest cookie's cart when not.
+                        .requestMatchers("/cart", "/cart/**").permitAll()
+                        // Guests place, read, pay and cancel their own orders, found by the same cart cookie; OrderService
+                        // answers 404 for anyone else's. The account's order list (GET /orders, matched by nothing
+                        // here, so it falls to anyRequest) and its last delivery details stay behind a login.
+                        .requestMatchers(HttpMethod.GET, "/orders/last-delivery").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/orders", "/orders/*/payment", "/orders/*/cancel").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/orders/*").permitAll()
+                        // Stripe has no token: the webhook proves itself with its Stripe-Signature header.
+                        .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
                         // Reviews are written by any signed-in user; ReviewService checks ownership on delete.
                         .requestMatchers(HttpMethod.POST, "/products/*/reviews").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/products/*/reviews/*").authenticated()

@@ -3,10 +3,13 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosResponse } from 'axios';
 import * as authApi from '../api/auth';
+import * as cartApi from '../api/cart';
 import { renderWithProviders } from '../test/renderWithProviders';
 import LoginPage from './LoginPage';
 
 vi.mock('../api/auth');
+// signing in merges the guest cart first; no server here to merge with
+vi.mock('../api/cart', async (actual) => ({ ...(await actual<typeof import('../api/cart')>()), mergeGuestCart: vi.fn() }));
 
 function apiFailure(status: number, data: unknown, headers: Record<string, string> = {}) {
   return new AxiosError('failed', String(status), undefined, null, { status, data, headers } as AxiosResponse);
@@ -21,7 +24,10 @@ async function fillAndSubmit(email: string, password: string) {
 }
 
 describe('LoginPage', () => {
-  beforeEach(() => vi.resetAllMocks());
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(cartApi.mergeGuestCart).mockResolvedValue({ lines: [], itemCount: 0, subtotal: 0 });
+  });
 
   it('shows field messages and never calls the API when the input is invalid', async () => {
     renderWithProviders(<LoginPage />, { path: '/login' });

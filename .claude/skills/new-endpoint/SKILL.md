@@ -101,7 +101,7 @@ unexpected errors reach the advice and become a generic `500`.
 ## Wiring a new path through the proxy
 
 `frontend/nginx.conf` proxies a fixed alternation of backend prefixes
-(`auth|users|products|categories|brands|search`). A new top-level domain prefix must be added
+(`auth|users|products|categories|brands|search|cart|orders|payments`). A new top-level domain prefix must be added
 there **and** to the matching `server.proxy` pattern in `frontend/vite.config.ts`, or the frontend
 will 404 against its own origin. Paths are proxied verbatim — never introduce a rewrite, because
 the refresh cookie is scoped `Path=/auth`.
