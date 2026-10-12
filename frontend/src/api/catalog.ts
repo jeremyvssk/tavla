@@ -13,6 +13,8 @@ export interface ProductSummary {
   categorySlug: string;
   primaryImageUrl: string | null;
   primaryImageFraming: ImageFraming | null;
+  /** PLANNED: the shelf's key specs for the list view, e.g. ["King 110 mm", "Hornbeam pieces"]; not sent yet */
+  specs?: string[];
 }
 
 export interface FacetValue {
@@ -101,6 +103,25 @@ export interface Review {
   body: string;
   verifiedPurchase: boolean;
   createdAt: string;
+  // PLANNED (helpful votes): the page shows votes and Report only once the API sends these
+  /** "Toomas R.": first name and initial, never the email */
+  authorName?: string;
+  helpfulCount?: number;
+  notHelpfulCount?: number;
+  /** the signed-in shopper's own vote */
+  myVote?: 'helpful' | 'not_helpful' | null;
+}
+
+export type ReviewSort = 'helpful' | 'newest' | 'highest' | 'lowest';
+
+/** PLANNED: GET /products/{id}/reviews/summary. The spread behind the average, and whether this shopper may review. */
+export interface ReviewSummary {
+  average: number | null;
+  count: number;
+  /** reviews per star, index 0 = one star */
+  distribution: [number, number, number, number, number];
+  /** null for guests */
+  me: { purchasedAt: string | null; reviewed: boolean } | null;
 }
 
 export interface Page<T> {
@@ -111,13 +132,13 @@ export interface Page<T> {
   totalPages: number;
 }
 
+/** In the order the sort menu lists them. Best match is only offered with a search. */
 export const SORTS = [
-  { value: 'featured', label: 'Featured' },
-  { value: 'relevance', label: 'Relevance' },
-  { value: 'newest', label: 'Newest' },
+  { value: 'relevance', label: 'Best match' },
+  { value: 'rating', label: 'Top rated' },
   { value: 'price_asc', label: 'Price, low to high' },
   { value: 'price_desc', label: 'Price, high to low' },
-  { value: 'rating', label: 'Rating' },
+  { value: 'newest', label: 'Newest' },
 ] as const;
 
 /** Mirrors GET /products query parameters; the catalog page keeps these in the URL. */
@@ -150,8 +171,23 @@ export async function fetchSuggestions(q: string): Promise<{ id: string; name: s
   return (await api.get('/search/suggestions', { params: { q } })).data;
 }
 
-export async function fetchReviews(productId: string, page: number): Promise<Page<Review>> {
-  return (await api.get(`/products/${encodeURIComponent(productId)}/reviews`, { params: { page, size: 5 } })).data;
+export async function fetchReviews(productId: string, page: number, sort: ReviewSort = 'helpful', rating?: number): Promise<Page<Review>> {
+  return (await api.get(`/products/${encodeURIComponent(productId)}/reviews`, { params: { page, size: 5, sort, rating } })).data;
+}
+
+export async function fetchReviewSummary(productId: string): Promise<ReviewSummary> {
+  return (await api.get(`/products/${encodeURIComponent(productId)}/reviews/summary`)).data;
+}
+
+/** PLANNED: PUT sets or changes the shopper's vote; DELETE takes it back. One vote per signed-in shopper. */
+export async function voteReview(productId: string, reviewId: string, vote: 'helpful' | 'not_helpful' | null): Promise<Review> {
+  const url = `/products/${encodeURIComponent(productId)}/reviews/${encodeURIComponent(reviewId)}/vote`;
+  return (vote === null ? await api.delete(url) : await api.put(url, { vote })).data;
+}
+
+/** PLANNED: POST /products/{id}/reviews/{reviewId}/report. Puts the review in the staff's moderation queue. */
+export async function reportReview(productId: string, reviewId: string, reason: string) {
+  await api.post(`/products/${encodeURIComponent(productId)}/reviews/${encodeURIComponent(reviewId)}/report`, { reason });
 }
 
 export async function postReview(productId: string, review: { rating: number; title: string; body: string }) {

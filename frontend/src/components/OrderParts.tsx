@@ -24,13 +24,13 @@ export function StatusPill({ status }: { status: OrderStatus }) {
   return <span className={`st ${look.tone}`}>{look.label}</span>;
 }
 
-/** Ordered, Paid, Packing, Shipped, Delivered: done steps carry their time, the next ones what to expect. */
-export function Tracker({ order }: { order: OrderDetail }) {
+/** Ordered, Paid, Packing, Shipped, Delivered: done steps carry their time, the next ones what to expect (or the `notes` given). */
+export function Tracker({ order, notes: given }: { order: OrderDetail; notes?: string[] }) {
   const now = trackerStep(order.status);
   if (now < 0) return null;
   const at = (s: OrderStatus) => order.history.find((h) => h.status === s)?.at;
   const option = SHIPPING.find((o) => o.method === order.shippingMethod) ?? SHIPPING[0];
-  const notes = [
+  const notes = given ?? [
     formatWhen(order.placedAt),
     at('PAYMENT_SUCCESSFUL') ? formatWhen(at('PAYMENT_SUCCESSFUL')!) : 'Confirming',
     at('PROCESSING') ? formatWhen(at('PROCESSING')!) : 'Usually the same day',
@@ -105,6 +105,8 @@ export function AccountTabs() {
     <nav className="acct-tabs" aria-label="Account">
       <NavLink end to="/account">Profile</NavLink>
       <NavLink to="/account/orders">Orders</NavLink>
+      <NavLink to="/account/addresses">Addresses</NavLink>
+      <NavLink to="/account/security">Security</NavLink>
     </nav>
   );
 }

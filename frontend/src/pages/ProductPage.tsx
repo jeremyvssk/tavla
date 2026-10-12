@@ -1,20 +1,21 @@
-// Product detail: photo gallery with a Back button with a zoom viewer, colour/size variants, specs in both unit systems, paged reviews.
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FormEvent, MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+// Product detail: photo gallery with a Back button with a zoom viewer, colour/size variants, specs in both unit systems, reviews.
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { MouseEvent, PointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { LINE_LIMIT, stockConflictOf, stockMessage } from '../api/cart';
-import { fetchProduct, fetchReviews, postReview, ProductDetail, ProductVariant, searchProducts } from '../api/catalog';
+import { fetchProduct, ProductDetail, ProductVariant, searchProducts } from '../api/catalog';
 import { toApiError } from '../api/errors';
-import Field from '../components/Field';
 import Icon, { Perks } from '../components/Icon';
 import Photo from '../components/Photo';
 import ProductRow from '../components/ProductRow';
+import Reviews from '../components/Reviews';
 import Stars from '../components/Stars';
 import { useCart, useCartActions } from '../hooks/useCart';
 import { formatPrice } from '../lib/format';
 import { axesOf, variantFor } from '../lib/variants';
-import { useAppDispatch, useAppSelector } from '../store';
+import { useAppDispatch } from '../store';
 import { opened } from '../store/cartSlice';
+import NotFoundPage from './NotFoundPage';
 
 export default function ProductPage() {
   const { id = '' } = useParams();
@@ -26,6 +27,9 @@ export default function ProductPage() {
   }, [product]);
 
   if (isPending) return <div className="wrap page"><p className="status-line">Loading product…</p></div>;
+  // an address that names no product (a typo, an old link) gets the shop's 404, with the search filled in
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  if (status === 404 || status === 400) return <NotFoundPage />;
   if (error || !product) {
     return (
       <div className="wrap page">
@@ -53,7 +57,7 @@ export default function ProductPage() {
         <div className="pd-info">
           <div className="pd-top">
             {stock}
-            <a href="#reviews-title" className="pd-top__rate"><Stars rating={product.averageRating} count={product.reviewCount} /></a>
+            <a href="#reviews" className="pd-top__rate"><Stars rating={product.averageRating} count={product.reviewCount} /></a>
           </div>
           <p className="by">
             {product.brand ? <Link to={`/catalog?brand=${product.brand.slug}`}>{product.brand.name}</Link> : 'Tavla'}
@@ -69,7 +73,7 @@ export default function ProductPage() {
       </article>
 
       <div className="wrap">
-        <Reviews productId={product.id} />
+        <Reviews product={product} />
       </div>
       <Related product={product} />
     </>
@@ -312,7 +316,7 @@ function Buy({ product }: { product: ProductDetail }) {
   function addOne() {
     setProblem(null);
     add.mutate({ productId: product.id }, {
-      onSuccess: () => dispatch(opened()),
+      onSuccess: () => dispatch(opened(product.id)),
       onError: (err) => {
         const conflict = stockConflictOf(err);
         setProblem(conflict ? stockMessage(conflict) : toApiError(err).message);
@@ -438,107 +442,5 @@ function Related({ product }: { product: ProductDetail }) {
           more={{ label: <>Shop all<br />{top.name}</>, to: `/catalog?category=${top.slug}` }} />
       </div>
     </>
-  );
-}
-
-function Reviews({ productId }: { productId: string }) {
-  const [page, setPage] = useState(0);
-  const status = useAppSelector((s) => s.auth.status);
-  const { data } = useQuery({
-    queryKey: ['reviews', productId, page],
-    queryFn: () => fetchReviews(productId, page),
-  });
-
-  return (
-    <section className="reviews t-sec" aria-labelledby="reviews-title">
-      <div className="t-head"><h2 id="reviews-title">Reviews</h2></div>
-      {status === 'authenticated' ? (
-        <ReviewForm productId={productId} onPosted={() => setPage(0)} />
-      ) : (
-        status === 'anonymous' && <p><Link className="link" to="/login" state={{ from: `/catalog/${productId}` }}>Sign in</Link> to write a review.</p>
-      )}
-      {data?.items.length === 0 && <p className="status-line">No reviews yet.</p>}
-      <ul className="review-list">
-        {data?.items.map((r) => (
-          <li key={r.id} className="review">
-            <Stars rating={r.rating} />
-            <h3 className="review__title">{r.title}</h3>
-            <p>{r.body}</p>
-            <p className="field__hint">
-              {new Date(r.createdAt).toLocaleDateString()}
-              {r.verifiedPurchase && ' · Verified purchase'}
-            </p>
-          </li>
-        ))}
-      </ul>
-      {data && data.totalPages > 1 && (
-        <nav className="pager" aria-label="Review pages">
-          <button type="button" className="btn btn--ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>Newer</button>
-          <span className="pager__status">{page + 1} / {data.totalPages}</span>
-          <button type="button" className="btn btn--ghost" disabled={page + 1 >= data.totalPages} onClick={() => setPage(page + 1)}>Older</button>
-        </nav>
-      )}
-    </section>
-  );
-}
-
-// Mirrors ReviewRequest: rating 1-5, title 1-255, body 1-5000.
-function ReviewForm({ productId, onPosted }: { productId: string; onPosted: () => void }) {
-  const queryClient = useQueryClient();
-  const [rating, setRating] = useState(0);
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [errors, setErrors] = useState<{ rating?: string; title?: string; body?: string }>({});
-
-  const mutation = useMutation({
-    mutationFn: () => postReview(productId, { rating, title: title.trim(), body: body.trim() }),
-    onSuccess: () => {
-      setRating(0);
-      setTitle('');
-      setBody('');
-      onPosted();
-      // The trigger updated the product's average, so both the product and its reviews are stale.
-      queryClient.invalidateQueries({ queryKey: ['reviews', productId] });
-      queryClient.invalidateQueries({ queryKey: ['product', productId] });
-    },
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const found = {
-      rating: rating >= 1 && rating <= 5 ? undefined : 'Choose a rating.',
-      title: !title.trim() ? 'Add a title.' : title.length > 255 ? 'Title must be at most 255 characters.' : undefined,
-      body: !body.trim() ? 'Write a few words.' : body.length > 5000 ? 'Review must be at most 5000 characters.' : undefined,
-    };
-    setErrors(found);
-    if (Object.values(found).some(Boolean)) return;
-    mutation.mutate();
-  }
-
-  return (
-    <form className="panel review-form" onSubmit={submit} noValidate>
-      <fieldset className="rating-input">
-        <legend className="field__label">Rating</legend>
-        {[1, 2, 3, 4, 5].map((n) => (
-          <label key={n} className="rating-input__option">
-            <input type="radio" name="rating" value={n} checked={rating === n} onChange={() => setRating(n)} />
-            {n}
-          </label>
-        ))}
-        {errors.rating && <p className="field__error">{errors.rating}</p>}
-      </fieldset>
-      <Field label="Title" name="title" maxLength={255} value={title} error={errors.title}
-        onChange={(e) => setTitle(e.target.value)} />
-      <div className="field">
-        <label className="field__label" htmlFor="review-body">Review</label>
-        <textarea id="review-body" className="field__input" rows={4} maxLength={5000} value={body}
-          aria-invalid={errors.body ? true : undefined} onChange={(e) => setBody(e.target.value)} />
-        {errors.body && <p className="field__error">{errors.body}</p>}
-      </div>
-      {mutation.error && <p className="form-error" role="alert">{toApiError(mutation.error).message}</p>}
-      <button className="button" type="submit" disabled={mutation.isPending}>
-        {mutation.isPending ? 'Posting…' : 'Post review'}
-      </button>
-    </form>
   );
 }

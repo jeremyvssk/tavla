@@ -2,7 +2,7 @@
 // and the last delivery details that prefill the checkout. The server side is backend OrderController.
 import type { ImageFraming } from '../lib/framing';
 import type { ShippingMethod } from '../lib/shipping';
-import type { CheckoutForm } from '../validation/checkoutRules';
+import type { BillingForm, CheckoutForm } from '../validation/checkoutRules';
 import type { Page } from './catalog';
 import { api } from './client';
 
@@ -18,7 +18,15 @@ export type OrderStatus =
   | 'REFUNDED';
 
 /** POST /orders. The flat field names are the ones a validation_failed answer names in `fields`. */
-export type PlaceOrderRequest = Omit<CheckoutForm, 'flat'> & { flat: string | null; shippingMethod: ShippingMethod };
+export type PlaceOrderRequest = Omit<CheckoutForm, 'flat'> & {
+  flat: string | null;
+  shippingMethod: ShippingMethod;
+  /**
+   * PLANNED: left out when it is the delivery address. The server doesn't accept it yet, and it refuses
+   * unknown fields (400 malformed_request), so a separate billing address fails until the backend adds it.
+   */
+  billingAddress?: BillingForm;
+};
 
 export interface OrderLine {
   productId: string;
@@ -56,7 +64,15 @@ export interface OrderDetail extends Omit<OrderSummary, 'preview'> {
   /** the server's answer to "can this still be cancelled", so the page never decides that itself */
   cancellable: boolean;
   /** card brand and last 4 once paid; Stripe never gives the server more than that */
-  payment: { brand: string; last4: string; paidAt: string } | null;
+  payment: {
+    brand: string;
+    last4: string;
+    paidAt: string;
+    /** PLANNED: Stripe's PaymentIntent id (pi_…), the reference a bank asks for; not sent yet */
+    reference?: string;
+  } | null;
+  /** PLANNED: the invoice address when it differs from shipTo; not sent yet */
+  billTo?: { name: string; street: string; postcode: string; city: string; country: string } | null;
   /** why the last payment attempt failed, in words the shopper can act on */
   paymentFailure: string | null;
   /** until when unpaid items stay reserved */

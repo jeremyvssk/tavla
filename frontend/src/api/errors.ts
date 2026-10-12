@@ -28,6 +28,8 @@ const MESSAGES: Record<string, string> = {
   validation_failed: 'Check the highlighted fields.',
   unauthorized: 'Your session has ended. Sign in again.',
   forbidden: 'You are not allowed to do that.',
+  // no such endpoint: the PLANNED calls answer this until the backend builds them
+  not_found: "The server can't do this yet.",
 };
 
 export function toApiError(err: unknown): ApiError {

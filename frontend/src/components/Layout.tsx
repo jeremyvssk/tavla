@@ -5,11 +5,21 @@ import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType, use
 import { CategoryNode, fetchCategories } from '../api/catalog';
 import { endSession } from '../auth/session';
 import { useCart } from '../hooks/useCart';
+import { DESKTOP, useMediaQuery } from '../hooks/useMediaQuery';
 import { useAppDispatch, useAppSelector } from '../store';
 import { closed as cartClosed, opened as cartOpened } from '../store/cartSlice';
 import CartPanel from './CartPanel';
-import Icon, { Perks } from './Icon';
+import Icon, { IconName, Perks } from './Icon';
+import MiniCart from './MiniCart';
 import SearchBox from './SearchBox';
+
+/** Where the footer and the About page send people; [placeholders] until the shop has its own accounts. */
+export const SOCIAL: { name: string; icon: IconName; href: string }[] = [
+  { name: 'Instagram', icon: 'instagram', href: 'https://www.instagram.com/' },
+  { name: 'YouTube', icon: 'youtube', href: 'https://www.youtube.com/' },
+  { name: 'Facebook', icon: 'facebook', href: 'https://www.facebook.com/' },
+  { name: 'X', icon: 'x', href: 'https://x.com/' },
+];
 
 /** Scroll position per history entry (location.key), so Back lands where the shopper left off. */
 const scrollByEntry = new Map<string, number>();
@@ -29,6 +39,9 @@ function rootOf(tree: CategoryNode[], slug: string | null) {
 export default function Layout() {
   const { status, user } = useAppSelector((s) => s.auth);
   const inCart = useCart().cart.itemCount;
+  const cartOpen = useAppSelector((s) => s.cart.open);
+  const desktop = useMediaQuery(DESKTOP);
+  const cartButton = useRef<HTMLButtonElement>(null);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -149,15 +162,19 @@ export default function Layout() {
                 <span className="lbl">Sign in</span>
               </NavLink>
             )}
-            <button type="button" className="t-act t-cart" aria-haspopup="dialog"
+            {/* a desktop gets the quick cart dropdown, a tablet or phone Project 2's panel from the right */}
+            <button type="button" className="t-act t-cart" ref={cartButton} aria-haspopup="dialog"
+              aria-expanded={desktop ? cartOpen : undefined} aria-controls={desktop ? 'mc' : undefined}
+              data-open={desktop && cartOpen ? '' : undefined}
               aria-label={inCart ? `Cart, ${inCart} ${inCart === 1 ? 'item' : 'items'}` : 'Cart, empty'}
-              onClick={() => dispatch(cartOpened())}>
+              onClick={() => dispatch(desktop && cartOpen ? cartClosed() : cartOpened())}>
               <span className="ic">
                 <Icon name="bag" />
                 {inCart > 0 && <span className="t-cnt" aria-hidden="true">{inCart}</span>}
               </span>
               <span className="lbl">Cart</span>
             </button>
+            {desktop && <MiniCart button={cartButton} />}
           </div>
         </div>
       </header>
@@ -189,7 +206,7 @@ export default function Layout() {
         </ul>
         <div className="perk-list"><Perks /></div>
       </div>
-      <CartPanel />
+      {!desktop && <CartPanel />}
 
       <main id="view">
         <Outlet />
@@ -201,6 +218,11 @@ export default function Layout() {
             <div>
               <Link className="t-logo" to="/" aria-label="Tavla, home">Tavla</Link>
               <p className="about">Chess, Go and Backgammon equipment for home, club and tournament play.</p>
+              <div className="soc">
+                {SOCIAL.map((s) => (
+                  <a key={s.name} href={s.href} aria-label={`Tavla on ${s.name}`} rel="noopener noreferrer"><Icon name={s.icon} /></a>
+                ))}
+              </div>
             </div>
             <div>
               <h2>Shop</h2>
@@ -214,18 +236,30 @@ export default function Layout() {
               </ul>
             </div>
             <div>
-              <h2>Browse</h2>
+              <h2>Help</h2>
               <ul>
-                <li><Link to="/catalog">All products</Link></li>
-                <li><Link to="/catalog?sort=rating">Top rated</Link></li>
-                <li><Link to="/catalog?sort=newest">Newest</Link></li>
+                <li><Link to="/contact">Contact us</Link></li>
+                <li><Link to="/faq">FAQ</Link></li>
+                <li><Link to="/faq#shipping">Shipping and delivery</Link></li>
+                <li><Link to="/faq#returns">Returns</Link></li>
+              </ul>
+            </div>
+            <div>
+              <h2>Company</h2>
+              <ul>
+                <li><Link to="/about">About Tavla</Link></li>
+                <li><Link to="/legal/terms">Terms of sale</Link></li>
+                <li><Link to="/legal/privacy">Privacy policy</Link></li>
               </ul>
             </div>
             <div>
               <h2>Account</h2>
               <ul>
                 {status === 'authenticated' ? (
-                  <li><Link to="/account">Your account</Link></li>
+                  <>
+                    <li><Link to="/account">Your account</Link></li>
+                    <li><Link to="/account/orders">Your orders</Link></li>
+                  </>
                 ) : (
                   <>
                     <li><Link to="/login">Sign in</Link></li>
@@ -236,7 +270,7 @@ export default function Layout() {
             </div>
           </div>
           <div className="base">
-            <span>© 2026 Tavla · Prices include VAT</span>
+            <span>© 2026 Tavla · Prices include VAT · Card payments by Stripe</span>
             <span>Product photos: Sunrise Chess &amp; Games, Yellow Mountain Imports, American-Wholesaler</span>
           </div>
         </div>

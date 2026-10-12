@@ -1,5 +1,5 @@
 // Checkout rules: every missing field and bad format gets a message that says how to fix it.
-import { CheckoutForm, cityMismatch, validateCheckout, validatePhone, validatePostcode } from './checkoutRules';
+import { BillingForm, CheckoutForm, cityMismatch, validateBilling, validateCheckout, validatePhone, validatePostcode } from './checkoutRules';
 
 const good: CheckoutForm = {
   email: 'kadri.saar@example.com', phone: '+372 5123 4567', firstName: 'Kadri', lastName: 'Saar',
@@ -68,5 +68,27 @@ describe('checkout rules', () => {
     // Tallinn in Latvia isn't the Tallinn it knows
     expect(cityMismatch('LV', 'Tallinn', 'LV-3401')).toBeUndefined();
     expect(validatePostcode('1014', 'EE', 'Tallinn')).toBe('Estonian postcodes have 5 digits, like 10141.');
+  });
+});
+
+describe('billing address rules', () => {
+  const bill: BillingForm = { name: 'Kask Kirjastus OÜ', street: 'Küüni 7', postcode: '51004', city: 'Tartu', country: 'EE' };
+
+  it('passes a complete invoice address', () => {
+    expect(Object.values(validateBilling(bill)).filter(Boolean)).toEqual([]);
+  });
+
+  it('names every missing field', () => {
+    expect(validateBilling({ ...bill, name: '', street: ' ', postcode: '', city: '' })).toMatchObject({
+      name: 'Enter the name or company the invoice is for.',
+      street: 'Enter the street and house number.',
+      postcode: 'Enter the postcode.',
+      city: 'Enter the city.',
+    });
+  });
+
+  it('checks the postcode against the country and the city, as the delivery address does', () => {
+    expect(validateBilling({ ...bill, postcode: '5100' }).postcode).toBe('Estonian postcodes have 5 digits, like 10141.');
+    expect(validateBilling({ ...bill, postcode: '10117' }).postcode).toBeDefined();
   });
 });

@@ -16,7 +16,9 @@ import { formatPrice } from '../lib/format';
 import { arrivalWindow, shippingCost, SHIPPING, ShippingMethod, summary } from '../lib/shipping';
 import { useAppDispatch, useAppSelector } from '../store';
 import { Errors, hasErrors } from '../validation/authRules';
-import { CheckoutField, CheckoutForm, COUNTRIES, CountryCode, FIELD_LABELS, FIELD_MAX, validateCheckout } from '../validation/checkoutRules';
+import {
+  BillingField, BillingForm, CheckoutField, CheckoutForm, COUNTRIES, CountryCode, FIELD_LABELS, FIELD_MAX, validateBilling, validateCheckout,
+} from '../validation/checkoutRules';
 
 const BLANK: CheckoutForm = { email: '', phone: '', firstName: '', lastName: '', street: '', flat: '', postcode: '', city: '', country: 'EE' };
 
@@ -32,6 +34,8 @@ export default function CheckoutPage() {
   const { cart, isPending: loading, refetch } = useCart();
 
   const [form, setForm] = useState<CheckoutForm>(BLANK);
+  const [sameBilling, setSameBilling] = useState(true);
+  const [billing, setBilling] = useState<BillingForm>({ name: '', street: '', postcode: '', city: '', country: 'EE' });
   const [method, setMethod] = useState<ShippingMethod>('standard');
   // a field shows its error once it has been left, or once Pay was pressed
   const [touched, setTouched] = useState<Partial<Record<CheckoutField, boolean>>>({});
@@ -74,6 +78,12 @@ export default function CheckoutPage() {
   const errors = useMemo(() => validateCheckout(form), [form]);
   const errorOf = (name: CheckoutField) => serverErrors[name] ?? (submitted || touched[name] ? errors[name] : undefined);
   const listed = (Object.keys(FIELD_LABELS) as CheckoutField[]).filter((name) => errorOf(name));
+  const billingErrors = useMemo(() => (sameBilling ? {} : validateBilling(billing)), [sameBilling, billing]);
+  const billingWrong = submitted && hasErrors(billingErrors);
+  const billingField = (name: BillingField, label: string, autoComplete: string) => (
+    <Field label={label} name={`billing-${name}`} autoComplete={autoComplete} maxLength={FIELD_MAX} value={billing[name]}
+      error={submitted ? billingErrors[name] : undefined} onChange={(e) => setBilling((b) => ({ ...b, [name]: e.target.value }))} />
+  );
 
   const field = (name: CheckoutField) => ({
     name,
@@ -94,7 +104,7 @@ export default function CheckoutPage() {
     event.preventDefault();
     setSubmitted(true);
     setFailure(null);
-    if (hasErrors(errors)) {
+    if (hasErrors(errors) || hasErrors(billingErrors)) {
       // the summary at the top lists every field to fix; focus goes there so a screen reader reads it
       requestAnimationFrame(() => summaryBox.current?.focus());
       return;
@@ -108,7 +118,10 @@ export default function CheckoutPage() {
         return;
       }
       const trimmed = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v.trim()])) as CheckoutForm;
-      const order = await placeOrder({ ...trimmed, flat: trimmed.flat || null, shippingMethod: method });
+      // sent only when it differs: the server refuses fields it doesn't know
+      const billingAddress = sameBilling ? {}
+        : { billingAddress: Object.fromEntries(Object.entries(billing).map(([k, v]) => [k, v.trim()])) as BillingForm };
+      const order = await placeOrder({ ...trimmed, flat: trimmed.flat || null, shippingMethod: method, ...billingAddress });
       // Stripe's answer in the browser is only a hint: the order page waits for the webhook to say paid or failed
       const stripeSaid = await card.current?.confirm(order.clientSecret, order.id);
       // the order took these lines out of the cart on the server; refreshed only now, so the form stays mounted while Stripe confirms
@@ -171,15 +184,19 @@ export default function CheckoutPage() {
           </div>
 
           <div aria-live="assertive">
-            {(listed.length > 0 && submitted) && (
+            {((listed.length > 0 || billingWrong) && submitted) && (
               <div className="msg msg--bad msg--block" tabIndex={-1} ref={summaryBox}>
                 <Icon name="alert" />
                 <div>
-                  <p><b>{listed.length === 1 ? '1 thing' : `${listed.length} things`} to fix before you pay</b></p>
+                  <p><b>{listed.length + (billingWrong ? 1 : 0) === 1 ? '1 thing' : `${listed.length + (billingWrong ? 1 : 0)} things`} to fix before you pay</b></p>
                   <p className="fix">
                     {listed.map((name, i) => (
                       <span key={name}>{i > 0 && ' · '}<button type="button" className="link" onClick={() => focusField(name)}>{FIELD_LABELS[name]}</button></span>
                     ))}
+                    {billingWrong && (
+                      <span>{listed.length > 0 && ' · '}<button type="button" className="link"
+                        onClick={() => document.querySelector<HTMLElement>('.bill [aria-invalid=true]')?.focus()}>Billing address</button></span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -242,6 +259,33 @@ export default function CheckoutPage() {
             <p className="test-note"><Icon name="info" /><span>Test mode. Pay with <code>4242 4242 4242 4242</code>, any future date, any CVC.</span></p>
             {/* card number, expiry and CVC are typed into Stripe's own frame and never reach our server */}
             <CardPayment ref={card} amount={total} />
+            <div className="ck billck">
+              <label>
+                <input type="checkbox" checked={sameBilling} onChange={(e) => setSameBilling(e.target.checked)} />
+                <i><Icon name="check" width={3} /></i>Billing address is the same as delivery
+              </label>
+            </div>
+            {!sameBilling && (
+              <div className="bill" role="group" aria-labelledby="bill-h">
+                <p id="bill-h" className="bill-h">Billing address <span className="mute">· as it appears on the invoice</span></p>
+                {billingField('name', 'Name or company', 'billing organization')}
+                {billingField('street', 'Street and house number', 'billing address-line1')}
+                <div className="grid3">
+                  {billingField('postcode', 'Postcode', 'billing postal-code')}
+                  {billingField('city', 'City', 'billing address-level2')}
+                  <div className="field">
+                    <label className="field__label" htmlFor="billing-country">Country</label>
+                    <div className="sel-wrap">
+                      <select id="billing-country" className="field__input" value={billing.country}
+                        onChange={(e) => setBilling((b) => ({ ...b, country: e.target.value as CountryCode }))}>
+                        {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                      </select>
+                      <Icon name="down" width={2} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </Section>
 
           <div className="pay">
@@ -249,7 +293,7 @@ export default function CheckoutPage() {
               <Icon name="lock" width={2} />{paying ? 'Placing your order…' : `Pay ${formatPrice(total)}`}
             </button>
             <p className="legal">
-              {submitted && listed.length > 0 ? 'Nothing was charged. Fix the fields in red and press Pay again.'
+              {submitted && (listed.length > 0 || billingWrong) ? 'Nothing was charged. Fix the fields in red and press Pay again.'
                 : 'You can cancel until we start packing.'}
             </p>
           </div>
@@ -352,8 +396,8 @@ function CheckoutShell({ from, children }: { from: string; children: ReactNode }
     <div className="t">
       <header className="cbar">
         <div className="wrap">
-          {/* back to where Checkout was pressed, with the cart open again */}
-          <Link className="back" to={from} state={{ openCart: true }}><Icon name="left" width={2} /><span>Cart</span></Link>
+          {/* back to the cart page when that is where Checkout was pressed; otherwise to that page, with the cart open again */}
+          <Link className="back" to={from} state={from === '/bag' ? undefined : { openCart: true }}><Icon name="left" width={2} /><span>Cart</span></Link>
           <Link className="t-logo" to="/" aria-label="Tavla, home">Tavla</Link>
           <span className="secure"><Icon name="lock" width={2} /><span>Secure<span className="long"> checkout</span></span></span>
         </div>

@@ -32,9 +32,11 @@ interface Props {
   title: string;
   items: ProductSummary[];
   more: { label: ReactNode; to: string };
+  /** under the title, e.g. the home page's Top rated / New in tabs; the row is then their tab panel */
+  tabs?: ReactNode;
 }
 
-export default function ProductRow({ id, title, items, more }: Props) {
+export default function ProductRow({ id, title, items, more, tabs }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const prevRef = useRef<HTMLButtonElement>(null);
@@ -229,14 +231,14 @@ export default function ProductRow({ id, title, items, more }: Props) {
 
   return (
     <section className="t-sec" aria-labelledby={id}>
-      <div className="t-head">
-        <h2 id={id}>{title}</h2>
+      <div className={tabs ? 't-head t-head--tabs' : 't-head'}>
+        {tabs ? <div className="t-titles"><h2 id={id}>{title}</h2>{tabs}</div> : <h2 id={id}>{title}</h2>}
         <div className="fp-nav">
           <button type="button" ref={prevRef} aria-label="Previous products" disabled><Icon name="left" width={2} /></button>
           <button type="button" ref={nextRef} aria-label="More products"><Icon name="arrow" width={2} /></button>
         </div>
       </div>
-      <div className="fp" ref={trackRef} tabIndex={0} aria-label={`${title}, scrolls sideways`}>
+      <div className="fp" ref={trackRef} tabIndex={0} aria-label={`${title}, scrolls sideways`} role={tabs ? 'tabpanel' : undefined}>
         {items.map((p) => <ProductCard key={p.id} product={p} />)}
         <Link className="pc pc--all" to={more.to} draggable={false}>
           <span className="ph"><span>{more.label}<Icon name="arrow" width={2.2} /></span></span>

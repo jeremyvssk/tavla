@@ -91,25 +91,38 @@ i-love-shopping1/
     ├── 15-self-signed-cert.sh   # makes the local TLS certificate on the container's first start
     ├── package.json, bun.lock
     ├── vite.config.ts           # Vite + Vitest + dev proxy mirroring nginx
+    ├── scripts/                 # layout-check.mjs (+ layout-measure.mjs): lists misaligned layout
+    │                            # on the running site, per screen width (`bun run layout-check`)
     └── src/
         ├── main.tsx             # providers: Redux, React Query, router
         ├── App.tsx              # routes + session restore
         ├── index.css            # the Tavla theme tokens + all component styles
+        ├── p3.css               # Project 3 screens, ported from the design canvas
         ├── api/                 # client.ts (axios, in-memory token, refresh), auth.ts,
-        │                        # catalog.ts, cart.ts, orders.ts, errors.ts
+        │                        # catalog.ts, cart.ts, orders.ts, errors.ts; account.ts,
+        │                        # support.ts, admin.ts (mostly PLANNED endpoints)
         ├── auth/session.ts      # restore / start (merges the guest cart) / end session (+ test)
         ├── store/               # Redux store, authSlice (user, never the token),
-        │                        # cartSlice (only whether the cart panel is open)
+        │                        # cartSlice (whether the cart panel is open, what was just added)
         ├── validation/          # authRules.ts: client copies of the DTO constraints;
-        │                        # checkoutRules.ts (+ tests)
+        │                        # checkoutRules.ts (+ tests), contactRules.ts, addressRules.ts
         ├── pages/               # Home, Catalog, Product, Login, Register, ForgotPassword,
-        │                        # ResetPassword, Account, Checkout, OrderStatus, Orders,
-        │                        # Order (+ *.test.tsx)
-        ├── components/          # Layout, SearchBox, Field, RequireAuth, ProductCard,
-        │                        # ProductRow, CartPanel (+ test), CardPayment (Stripe's form),
-        │                        # OrderParts, Icon, Stars, GoogleButton, Recaptcha
-        ├── hooks/, lib/         # useDebouncedValue, useCart; loadScript, format, variants,
-        │                        # shipping, orderStatus, stripe (+ tests)
+        │                        # ResetPassword, Account, Addresses, Security, Checkout,
+        │                        # OrderStatus, Orders, Order, Cart, Contact, Faq, About,
+        │                        # Legal, NotFound (+ *.test.tsx)
+        ├── admin/               # the staff area under /admin, a lazy chunk: AdminApp (routes),
+        │                        # AdminLayout, TwoFactorGate, access.ts (role → section),
+        │                        # parts.tsx (shared bits), pages/ (Overview, Orders, Order,
+        │                        # PackingSlips, Delivery, Products, ProductEdit, Categories,
+        │                        # Import, Reviews, Users, Audit)
+        ├── content/             # FAQ and legal texts
+        ├── components/          # Layout, SearchBox, MiniCart, Field, RequireAuth, ProductCard,
+        │                        # ProductRow, ProductListRow, CartPanel (+ test), CardPayment
+        │                        # (Stripe's form), PayMarks, Reviews, ReviewModal,
+        │                        # TwoFactorPanel, OrderParts, Icon, Stars, GoogleButton, Recaptcha
+        ├── hooks/, lib/         # useDebouncedValue, useCart, useMediaQuery, usePageMeta,
+        │                        # useActiveSection; loadScript, format, variants, shipping,
+        │                        # orderStatus, stripe, completions (+ tests)
         └── test/                # Vitest setup, renderWithProviders
 ```
 

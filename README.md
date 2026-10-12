@@ -171,8 +171,13 @@ new publishable key.
 - The postcode is checked against the city, not just its format
 
 **Not built yet**
-- Admin screens (Project 3). Moving an order on to Processing, Shipped and Delivered isn't built
-  yet (the statuses and their rules are).
+- Project 3 is under way. Its screens are built in the website (the staff area under `/admin`, the
+  help, contact, about and legal pages, the address book, the full cart page), but most of what they
+  need from the server isn't yet. Where a server part is missing, the page says "The server can't do
+  this yet". In the staff area, adding, editing and archiving products with their photos, and adding
+  categories, work today
+- Moving an order on to Processing, Shipped and Delivered isn't built yet on the server (the
+  statuses and their rules are)
 - Parcel tracking with a real courier.
 
 ---

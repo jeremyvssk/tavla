@@ -5,7 +5,7 @@ export interface Me {
   id: string;
   email: string;
   fullName: string;
-  role: 'CUSTOMER' | 'ADMIN';
+  role: 'CUSTOMER' | 'ADMIN' | 'SUPPORT' | 'SALES';
   authProvider: 'LOCAL' | 'GOOGLE' | 'FACEBOOK';
   twoFactorEnabled: boolean;
 }

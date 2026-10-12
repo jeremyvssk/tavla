@@ -1,16 +1,18 @@
 // After Pay: waits for the payment result, then says thank you or what went wrong. Guests land here too.
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { isAxiosError } from 'axios';
+import { register } from '../api/auth';
 import { toApiError } from '../api/errors';
 import { fetchOrder, OrderDetail, startPayment } from '../api/orders';
 import CardPayment, { CardPaymentHandle } from '../components/CardPayment';
 import Icon from '../components/Icon';
-import { formatWhen, ReadOnlyLines, shippingName, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
+import { formatWhen, ReadOnlyLines, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
 import { formatPrice } from '../lib/format';
 import { arrivalWindow, SHIPPING } from '../lib/shipping';
 import { useAppSelector } from '../store';
+import { validateNewPassword } from '../validation/authRules';
 import { CancelSheet } from './OrderPage';
 
 // The webhook usually lands within seconds. Past this the page stops asking and says it is slow.
@@ -101,37 +103,114 @@ function Confirmed({ order }: { order: OrderDetail }) {
   const signedIn = useAppSelector((s) => s.auth.status === 'authenticated');
   const [cancelling, setCancelling] = useState(false);
   const option = SHIPPING.find((o) => o.method === order.shippingMethod) ?? SHIPPING[0];
+  const ref = order.payment?.reference;
   return (
-    <main className="cf">
-      <Hero order={order} mark="ok" title={`Thank you, ${order.shipTo.firstName}. Your order is in.`}
-        lede={`We emailed the receipt to ${order.email}. It ships by ${option.name.toLowerCase()} and arrives ${arrivalWindow(option, new Date(order.placedAt))}.`} />
-      <div className="card"><Tracker order={order} /></div>
-      <div className="cf-grid">
-        <div className="card">
+    <main className="wrap cf2">
+      <div className="cf2-main">
+        <header className="cf2-head" role="status">
+          <p className="eyebrow"><span className="okdot"><Icon name="check" width={2.6} /></span>Order confirmed · {formatWhen(order.placedAt)}</p>
+          <h1>Thank you, {order.shipTo.firstName}. Your order is in.</h1>
+          <p className="lede">The receipt and a link to follow this order are on their way to {order.email}.</p>
+        </header>
+        <dl className="refs">
+          <div><dt>Order number</dt><dd>{order.number} <CopyButton text={order.number} label={`Copy order number ${order.number}`} /><small>Quote it when you write to us.</small></dd></div>
+          {ref && (
+            <div><dt>Payment reference</dt><dd className="mono">{ref.length > 14 ? `${ref.slice(0, 7)}…${ref.slice(-4)}` : ref} <CopyButton text={ref} label="Copy payment reference" /><small>Stripe's id for the payment, if your bank asks.</small></dd></div>
+          )}
+          <div><dt>Estimated delivery</dt><dd>{arrivalWindow(option, new Date(order.placedAt))}<small>{option.name}. Tracking link by email when it ships.</small></dd></div>
+        </dl>
+        <div className="card"><Tracker order={order} /></div>
+        <div className="card cf2-fill">
           <h2>Delivery and payment</h2>
-          <dl className="kv">
+          <dl className="kv cf2-kv">
             <div><dt>Ship to</dt><dd><ShipTo order={order} /></dd></div>
-            <div><dt>Shipping</dt><dd>{shippingName(order.shippingMethod)} · {order.shippingCost === 0 ? 'Free' : formatPrice(order.shippingCost)}</dd></div>
-            {order.payment && <div><dt>Paid with</dt><dd>{order.payment.brand} ending {order.payment.last4} · {formatPrice(order.total)} on {formatWhen(order.payment.paidAt)}</dd></div>}
-            {order.cancellable && (
-              <div><dt>Changed your mind?</dt><dd>{signedIn
-                ? 'You can cancel from your order page until we start packing.'
-                : <>You can cancel here until we start packing. <button type="button" className="link" onClick={() => setCancelling(true)}>Cancel this order</button></>}</dd></div>
-            )}
+            {order.billTo && <div><dt>Bill to</dt><dd>{order.billTo.name}<br />{order.billTo.street}<br />{order.billTo.postcode} {order.billTo.city}, {order.billTo.country}</dd></div>}
+            {order.payment && <div><dt>Paid with</dt><dd>{order.payment.brand} ending {order.payment.last4}<br />{formatPrice(order.total)} on {formatWhen(order.payment.paidAt)}</dd></div>}
           </dl>
+          {order.cancellable && (
+            <p className="cf-note foot-end">
+              <Icon name="info" />
+              <span>Changed your mind? You can cancel until we start packing, {signedIn
+                ? <>from <Link className="lnk" to={`/account/orders/${encodeURIComponent(order.id)}`}>the order page</Link>.</>
+                : <>right here. <button type="button" className="link" onClick={() => setCancelling(true)}>Cancel this order</button></>}</span>
+            </p>
+          )}
         </div>
+      </div>
+      <aside className="cf2-side" aria-label="Order summary">
         <div className="card">
           <div className="card-h"><h2>Your order</h2><span className="mute">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'}</span></div>
           <ReadOnlyLines lines={order.lines} />
           <Totals subtotal={order.subtotal} shipping={order.shippingCost} method={order.shippingMethod} vat={order.vat} total={order.total} grandLabel="Paid" />
         </div>
-      </div>
-      <div className="cta">
-        {signedIn && <Link className="btn" to={`/account/orders/${encodeURIComponent(order.id)}`}>See this order</Link>}
+        {signedIn ? (
+          <div className="card cf2-fill">
+            <h2>Follow it from your account</h2>
+            <p className="mute">The order page shows each step, the tracking link once it ships, and lets you cancel before we pack.</p>
+            <div className="cf2-join foot-end"><Link className="btn" to={`/account/orders/${encodeURIComponent(order.id)}`}>See this order</Link></div>
+          </div>
+        ) : (
+          <JoinCard email={order.email} name={`${order.shipTo.firstName} ${order.shipTo.lastName}`} />
+        )}
         <Link className="btn btn--ghost" to="/catalog">Continue shopping</Link>
-      </div>
+      </aside>
       {cancelling && <CancelSheet order={order} onClose={() => setCancelling(false)} />}
     </main>
+  );
+}
+
+/** Copies a reference to the clipboard and says so for a moment. */
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button className="copy" type="button" aria-label={copied ? 'Copied' : label}
+      onClick={async () => { await navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1600); }}>
+      <Icon name={copied ? 'check' : 'log'} width={2} />{copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+/** A guest can keep their next orders in one place: an account with the email they just used. */
+function JoinCard({ email, name }: { email: string; name: string }) {
+  const [password, setPassword] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [pending, setPending] = useState(false);
+  async function join(e: FormEvent) {
+    e.preventDefault();
+    const bad = validateNewPassword(password);
+    if (bad) { setProblem(bad); return; }
+    setPending(true);
+    try {
+      await register({ email, password, fullName: name });
+      setDone(true);
+    } catch (err) {
+      setProblem(toApiError(err).message);
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <div className="card cf2-fill">
+      <h2>Keep your orders in an account</h2>
+      {done ? (
+        <p className="mute" role="status">Your account is made. <Link className="lnk" to="/login">Sign in</Link> with {email} to see your orders.</p>
+      ) : (
+        <>
+          <p className="mute">Choose a password and your next orders show up under Your orders. Your email is already filled in.</p>
+          <form className="cf2-join foot-end" noValidate onSubmit={join}>
+            <div className="f">
+              <label className="vh" htmlFor="join-pw">Password</label>
+              <input className="in" id="join-pw" type="password" placeholder="At least 8 characters" autoComplete="new-password"
+                value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={problem ? true : undefined}
+                aria-describedby={problem ? 'join-e' : undefined} />
+              {problem && <p className="err" id="join-e"><Icon name="alert" width={2} />{problem}</p>}
+            </div>
+            <button className="btn" type="submit" disabled={pending}>{pending ? 'Creating…' : 'Create account'}</button>
+          </form>
+        </>
+      )}
+    </div>
   );
 }
 

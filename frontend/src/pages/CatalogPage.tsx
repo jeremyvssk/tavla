@@ -1,11 +1,12 @@
 // Browse and search: every filter and the sort live in the URL, so results are linkable and Back works.
 import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FormEvent, Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CategoryNode, fetchCategories, SearchParams, searchProducts, SORTS } from '../api/catalog';
 import { toApiError } from '../api/errors';
 import Icon, { Star } from '../components/Icon';
 import ProductCard from '../components/ProductCard';
+import ProductListRow from '../components/ProductListRow';
 import { formatBand } from '../lib/format';
 
 /** Products per "Show more": divides evenly into rows of 2, 3 and 4 cards. */
@@ -67,14 +68,21 @@ export default function CatalogPage() {
     minPrice: url.get('minPrice') ?? undefined,
     maxPrice: url.get('maxPrice') ?? undefined,
     minRating: url.get('minRating') ?? undefined,
-    sort: url.get('sort') ?? undefined,
+    // a search sorts by best match (the full-text rank), browsing by top rated
+    sort: url.get('sort') ?? (url.get('q') ? 'relevance' : 'rating'),
   };
+  const view = url.get('view') === 'list' ? 'list' : 'grid';
+  // ?page=3 starts the list at the third batch: the page links under Show more are real, linkable pages
+  const startPage = Math.max(1, Math.floor(Number(url.get('page'))) || 1);
 
   // "Show more" instead of numbered pages: each batch is appended, and the facets and totals come from the first.
+  // the view is how the results are drawn, not which ones: switching it must not refetch
+  const queryUrl = new URLSearchParams(url);
+  queryUrl.delete('view');
   const { data: pages, error, isPending, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['products', url.toString()],
+    queryKey: ['products', queryUrl.toString()],
     queryFn: ({ pageParam }) => searchProducts({ ...params, page: String(pageParam), size: String(BATCH) }),
-    initialPageParam: 0,
+    initialPageParam: startPage - 1,
     getNextPageParam: (last) => (last.page + 1 < last.totalPages ? last.page + 1 : undefined),
     // Keep showing the old results while a filter change loads, instead of flashing an empty grid.
     placeholderData: keepPreviousData,
@@ -141,7 +149,8 @@ export default function CatalogPage() {
       if (Array.isArray(value)) value.forEach((v) => next.append(key, v));
       else if (value !== null && value !== '') next.set(key, value);
     }
-    next.delete('page'); // left over from links made when the catalog had numbered pages
+    // a new filter or sort starts again from the first page; switching the view keeps it
+    if (!('page' in changes) && !('view' in changes)) next.delete('page');
     setUrl(next);
   }
 
@@ -171,6 +180,23 @@ export default function CatalogPage() {
     .map((node) => ({ node, count: subtree(node).reduce((n, slug) => n + (perSlug.get(slug) ?? 0), 0) }))
     .filter((s) => s.count > 0);
 
+  // Searching, the chips under the heading narrow to one shelf: a game's shelves, by how many results each holds.
+  const scopes = params.q
+    ? tree.flatMap((game) => game.children)
+      .map((node) => ({ node, count: subtree(node).reduce((n, slug) => n + (perSlug.get(slug) ?? 0), 0) }))
+      .filter((s) => s.count > 0).sort((a, b) => b.count - a.count).slice(0, 5)
+    : [];
+  const allCount = params.q && params.category ? null : data?.totalItems;
+  const shelfName = (slug: string) => {
+    const find = (nodes: CategoryNode[]): string | null => {
+      for (const n of nodes) { if (n.slug === slug) return n.name; const f = find(n.children); if (f) return f; }
+      return null;
+    };
+    return find(tree);
+  };
+  const lastPage = data ? Math.max(1, data.totalPages) : 1;
+  const loadedTo = startPage + (pages?.pages.length ?? 1) - 1;
+
   const title = params.q ? <>Results for <q>{params.q}</q></> : current?.name ?? 'All products';
   const count = data?.totalItems ?? 0;
 
@@ -178,7 +204,22 @@ export default function CatalogPage() {
     <>
       <div className="wrap sr">
         <header className="sr-head">
+          {params.q && <p className="eyebrow">Search</p>}
           <h1>{title}</h1>
+          {scopes.length > 1 && (
+            <nav className="scope" aria-label="Narrow to a shelf">
+              <span>Show:</span>
+              <Link to={`/catalog?q=${encodeURIComponent(params.q!)}`} aria-current={params.category ? undefined : 'page'}>
+                All{allCount != null && <small>{allCount}</small>}
+              </Link>
+              {scopes.map(({ node, count }) => (
+                <Link key={node.slug} to={`/catalog?q=${encodeURIComponent(params.q!)}&category=${node.slug}`}
+                  aria-current={params.category === node.slug ? 'page' : undefined}>
+                  {node.name} <small>{count}</small>
+                </Link>
+              ))}
+            </nav>
+          )}
         </header>
         <div className="sf-scrim" data-on={sheet ? '' : undefined} onClick={() => setSheet(false)} />
         <aside className="sf" id="filters" ref={side} aria-label="Filters" data-on={sheet ? '' : undefined}>
@@ -299,15 +340,25 @@ export default function CatalogPage() {
               ))}
               {chips.length > 1 && <button type="button" className="clear" onClick={() => update(clearAll)}>Clear all</button>}
             </div>
-            <label className="sort">
-              <span>Sort by</span>
-              <select value={data?.sort ?? params.sort ?? ''} onChange={(e) => update({ sort: e.target.value })}>
-                {SORTS.filter((s) => s.value !== 'relevance' || params.q).map((s) => (
-                  <option key={s.value} value={s.value}>{s.label}</option>
-                ))}
-              </select>
-              <Icon name="down" width={2.4} />
-            </label>
+            <div className="tools">
+              <div className="vt" role="group" aria-label="View">
+                <button type="button" aria-pressed={view === 'grid'} aria-label="Grid view" onClick={() => update({ view: null })}>
+                  <Icon name="grid" width={2} />
+                </button>
+                <button type="button" aria-pressed={view === 'list'} aria-label="List view" onClick={() => update({ view: 'list' })}>
+                  <Icon name="list" width={2} />
+                </button>
+              </div>
+              <label className="sort">
+                <span>Sort by</span>
+                <select value={params.sort} onChange={(e) => update({ sort: e.target.value })}>
+                  {SORTS.filter((s) => s.value !== 'relevance' || params.q).map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+                <Icon name="down" width={2.4} />
+              </label>
+            </div>
           </div>
 
           {data?.approximate && data.totalItems > 0 && (
@@ -315,29 +366,98 @@ export default function CatalogPage() {
           )}
           {error && <p className="form-error" role="alert">{toApiError(error).message}</p>}
           {isPending && <p className="status-line">Loading products…</p>}
-          {data && data.items.length === 0 && (
+          {data && data.items.length === 0 && (chips.length || !params.q ? (
             <div className="empty">
               <p className="t-eyebrow">No matches</p>
-              <h2>{chips.length ? 'Nothing fits all of those filters.' : <>We don’t stock <q>{params.q}</q> yet.</>}</h2>
-              <p>{chips.length ? 'Try taking one away, or start over with every product in view.' : 'Check the spelling, or try a broader word like board or set.'}</p>
-              <Link className="btn" to="/catalog">Browse all products</Link>
+              <h2>Nothing fits all of those filters.</h2>
+              <p>Try taking one away, or start over with every product in view.</p>
+              <button type="button" className="btn" onClick={() => update(clearAll)}>Clear the filters</button>
+            </div>
+          ) : (
+            <NoResults query={params.q!} />
+          ))}
+          <h2 className="vh">Products{startPage > 1 ? `, from page ${startPage}` : ''}</h2>
+          {view === 'list' ? (
+            <ul className="rl">
+              {items.map((p) => <ProductListRow key={p.id} product={p} shelf={shelfName(p.categorySlug)} />)}
+            </ul>
+          ) : (
+            <div className="rg">
+              {items.map((p) => <ProductCard key={p.id} product={p} />)}
             </div>
           )}
-          <div className="rg">
-            {items.map((p) => <ProductCard key={p.id} product={p} />)}
-          </div>
 
-          {data && count > items.length && (
+          {data && lastPage > 1 && (
             <div className="more">
-              <p>Showing {items.length} of {count}</p>
-              <progress max={count} value={items.length} aria-hidden="true" />
-              <button type="button" className="btn btn--ghost" disabled={!hasNextPage || isFetchingNextPage} onClick={() => fetchNextPage()}>
-                {isFetchingNextPage ? 'Loading…' : 'Show more products'}
-              </button>
+              <p>Showing {(startPage - 1) * BATCH + 1}–{(startPage - 1) * BATCH + items.length} of {count}</p>
+              <progress max={count} value={(startPage - 1) * BATCH + items.length} aria-hidden="true" />
+              {hasNextPage && (
+                <button type="button" className="btn btn--ghost" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>
+                  {isFetchingNextPage ? 'Loading…' : `Show ${Math.min(BATCH, count - (startPage - 1) * BATCH - items.length)} more`}
+                </button>
+              )}
+              <PageLinks current={startPage} loadedTo={loadedTo} last={lastPage} href={(n) => {
+                const next = new URLSearchParams(url);
+                if (n === 1) next.delete('page'); else next.set('page', String(n));
+                return `/catalog?${next}`;
+              }} />
             </div>
           )}
         </section>
       </div>
     </>
+  );
+}
+
+/** "Or go to page 1 2 3 … 9": real links (?page=n), for jumping ahead and for crawlers. Pages already on screen are marked. */
+function PageLinks({ current, loadedTo, last, href }: { current: number; loadedTo: number; last: number; href: (n: number) => string }) {
+  const shown = new Set([1, last, current - 1, current, loadedTo, loadedTo + 1, loadedTo + 2].filter((n) => n >= 1 && n <= last));
+  const list = [...shown].sort((a, b) => a - b);
+  return (
+    <nav className="pgl" aria-label="Pages">
+      <span>Or go to page</span>
+      {list.map((n, i) => (
+        <Fragment key={n}>
+          {i > 0 && n - list[i - 1] > 1 && <span aria-hidden="true">…</span>}
+          {n >= current && n <= loadedTo
+            ? <span aria-current={n === current ? 'page' : 'true'}>{n}</span>
+            : <Link to={href(n)} aria-label={`Page ${n}`}>{n}</Link>}
+        </Fragment>
+      ))}
+    </nav>
+  );
+}
+
+/** A search with no results: what to try, a way to ask us, and the best-rated products instead. */
+function NoResults({ query }: { query: string }) {
+  const top = useQuery({
+    queryKey: ['products', 'sort=rating&size=10'],
+    queryFn: () => searchProducts({ sort: 'rating', size: '10' }),
+    staleTime: 5 * 60_000,
+  });
+  const picks = (top.data?.items ?? []).filter((p) => p.inStock).slice(0, 5);
+  const shorter = query.split(/\s+/)[0];
+  return (
+    <div className="noresults">
+      <div className="empty2">
+        <p className="eyebrow">No matches</p>
+        <h2>Nothing for <q>{query}</q></h2>
+        <ul className="tips">
+          <li>Check the spelling, or use fewer words{shorter !== query && <>: <i>{shorter}</i> instead of <i>{query}</i></>}.</li>
+          <li>Try what it is, not its brand: <i>clock</i>, <i>board</i>, <i>stones</i>.</li>
+          <li>Can't find it at all? <Link className="lnk" to="/contact">Ask us</Link>, and we'll check with our suppliers.</li>
+        </ul>
+        <div className="row">
+          {shorter !== query && <Link className="btn" to={`/catalog?q=${encodeURIComponent(shorter)}`}>Search for “{shorter}”</Link>}
+          <Link className="btn btn--ghost" to="/catalog">Browse all products</Link>
+        </div>
+      </div>
+      {picks.length > 0 && (
+        <section aria-labelledby="pop-h">
+          <div className="t-head"><h2 id="pop-h">Top rated right now</h2><Link className="t-go" to="/catalog">View all<Icon name="arrow" width={2.2} /></Link></div>
+          <div className="rg rg5">{picks.map((p) => <ProductCard key={p.id} product={p} />)}</div>
+        </section>
+      )}
+    </div>
   );
 }

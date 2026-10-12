@@ -6,7 +6,7 @@ seed is committed, so Docker stays the only prerequisite). School project in 3 p
 **Current scope: Project 2** — cart, checkout, Stripe payments, orders. Project 1 (auth, database,
 product catalog) is done.
 
-The assignment brief and its review checklist are in [docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md).
+The assignment brief and its review checklist are in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md).
 [README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
 **What works** section honest; a README claiming unbuilt features is worse than no README. It is
 written for non-experts: plain language, short, no design essays. The detail lives elsewhere:

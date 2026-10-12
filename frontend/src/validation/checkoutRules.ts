@@ -132,3 +132,22 @@ export const FIELD_LABELS: Record<CheckoutField, string> = {
   city: 'City',
   country: 'Country',
 };
+
+/** An invoice address when it differs from the delivery one: a person or a company, and where it is. */
+export interface BillingForm {
+  name: string;
+  street: string;
+  postcode: string;
+  city: string;
+  country: CountryCode;
+}
+export type BillingField = keyof BillingForm;
+
+export function validateBilling(b: BillingForm): Errors<BillingField> {
+  return {
+    name: required(b.name, 'Enter the name or company the invoice is for.'),
+    street: required(b.street, 'Enter the street and house number.'),
+    postcode: validatePostcode(b.postcode, b.country, b.city),
+    city: required(b.city, 'Enter the city.'),
+  };
+}
