@@ -1,31 +1,31 @@
 # i-love-shopping
 
-An online shop (B2C e-commerce) for chess, Go and backgammon products. This is **Project 3 of 3: the
-staff area, reviews, the shopper's account, the rest of the site, and the security, SEO, accessibility
-and load-test work.** It builds on Project 2
-(cart, checkout, Stripe payments and orders) and Project 1 (accounts, login and the product catalog),
-described, folded away, at the [end of this page](#project-1-accounts-login-and-the-catalog).
+An online shop (B2C e-commerce) for chess, Go and backgammon products: the storefront, the shopper's account,
+and an **admin area** where staff run the products, orders, delivery, reviews and users. This is **Project 3
+of 3**. It builds on Project 2 (cart, checkout, Stripe payments, orders) and Project 1 (accounts, login,
+catalog), both folded away at the [end of this page](#project-2-cart-checkout-payments-and-orders).
 
-The shop starts with about 1,770 real products (with photos and reviews), so there is something to
-put in the cart right away. The assignment brief is in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md)
-(Project 2's: [docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md)).
+The shop starts with about 1,770 real products (with photos and reviews), so there is something to put in the
+cart right away. The assignment brief is in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md).
 
-> **Reviewers:** the checklist items are answered in **[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md)** (Project 3's built parts first),
-> with where to find it in the code and which tests prove it.
+> **Reviewers:** every checklist item is answered in **[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md)**, with where
+> to find it in the code and which tests prove it. To get into the admin area, see [The admin area](#the-admin-area).
 
 ## Contents
 
 1. [What you need](#what-you-need)
 2. [Setup](#setup)
 3. [What works](#what-works)
-4. [Database](#database)
-5. [How it works](#how-it-works)
-6. [Usage guide](#usage-guide)
-7. [Tests](#tests)
-8. [Performance analysis report](#performance-analysis-report)
-9. [Troubleshooting](#troubleshooting)
-10. [Where things are](#where-things-are)
-11. [Project 1: accounts, login and the catalog](#project-1-accounts-login-and-the-catalog)
+4. [The admin area](#the-admin-area)
+5. [Usage guide](#usage-guide)
+6. [Database](#database)
+7. [How it works](#how-it-works)
+8. [Tests](#tests)
+9. [Performance analysis report](#performance-analysis-report)
+10. [Troubleshooting](#troubleshooting)
+11. [Where things are](#where-things-are)
+12. [Project 2: cart, checkout, payments and orders](#project-2-cart-checkout-payments-and-orders)
+13. [Project 1: accounts, login and the catalog](#project-1-accounts-login-and-the-catalog)
 
 ---
 
@@ -35,6 +35,7 @@ put in the cart right away. The assignment brief is in [docs/ASSIGNMENT3.md](doc
 |---|---|
 | Run the shop | **Docker** with Docker Compose (Docker Desktop on Windows and Mac; Docker Engine and the Compose plugin on Linux). Nothing else: Java, Node, the database, RabbitMQ and the Stripe CLI all run inside containers |
 | Pay with a card | A free **Stripe account**, for two test keys. An email address is enough: no business details, no real card, and test mode moves no money. Without the keys the shop still runs, but placing an order says payments are unavailable |
+| Use the admin area | An **authenticator app** on your phone (Google Authenticator, Authy, or the iPhone's Passwords app): every staff account must use two-factor sign-in |
 | Run the automated tests | Docker running (the tests start their own database, Redis and RabbitMQ), plus **Java 21** and **Maven 3.9+** for the server tests and **[Bun](https://bun.sh)** for the website tests |
 | Read the emails the shop sends | Nothing: they all land in MailHog, a test inbox at <http://localhost:8025> |
 
@@ -80,7 +81,7 @@ other setting works as it is.
 ```
 
 The first start takes a few minutes while everything is built. The script:
-- writes a random **encryption key** into `.env` (`APP_ENCRYPTION_KEY`). Keep that file: orders saved
+- writes a random **encryption key** into `.env` (`APP_ENCRYPTION_KEY`). Keep that file: data saved
   with the key can't be read without it
 - asks the Stripe CLI for its signing secret and saves it as `STRIPE_WEBHOOK_SECRET`, so the server
   trusts the payment results the CLI forwards
@@ -91,9 +92,9 @@ Then open:
 | What | Where |
 |---|---|
 | The shop | <https://localhost:5443> (<http://localhost:5173> sends you there) |
+| The admin area | <https://localhost:5443/admin> (needs a staff account: [The admin area](#the-admin-area)) |
 | MailHog (every email the shop sends) | <http://localhost:8025> |
 | RabbitMQ (the message queues) | <http://localhost:15672>, user `app`, password `changeme` |
-| Stripe's payment events, as they arrive | `docker compose logs -f stripe-cli` |
 | The API | <http://localhost:8080> |
 | Database (PostgreSQL) | `localhost:5432`, database `iloveshopping`, user `app`, password `changeme` |
 
@@ -116,484 +117,101 @@ new publishable key.
 
 ## What works
 
-**Staff area (Project 3)**
-- Three staff roles with only what each needs: **Support** runs orders, refunds and reviews; **Sales** runs
-  products, categories, prices, bulk upload and delivery; **Admin** everything, plus users and the audit log.
-  The server checks the role on every request, not just the menu
-- **Every staff member must use two-factor sign-in.** Until it is on, the admin pages answer "turn on
-  two-factor" and nothing else, and a staff account can't turn it off
-- Roles are changed on the Users page with the admin's own two-factor code, and the person's open sessions
-  get the new role at once. Admin itself is only given on the server ([Becoming an admin](#becoming-an-admin)),
-  so even a stolen admin session can't make more admins
-- An **audit log** of every staff change and sign-in: who, what, before and after, and from where (the
-  address cut to its first two parts). Nobody can edit or delete it for 12 months, not even in the database
-- **Products:** every product, hidden and archived ones too, with SKU and exact stock, counts per tab, and
-  changes to many at once (show, hide, move, price). Sales may move a price by at most half per change; an
-  admin by any amount. Deleting a product that was ever ordered archives it instead, so old orders keep it
-- **Categories:** rename, hide, move under another (never under itself) and reorder; only an empty one can
-  be deleted
-- **Bulk upload** of a CSV or JSON file: checked first without changing anything, then imported all at once
-  or not at all. Rows are matched on SKU; an update changes only the cells that have a value. The rows with
-  errors can be downloaded to fix. The product export uses the same columns, so it can be edited and uploaded
-- **Orders:** a queue by status, Start packing for many at once, Shipped with the courier and parcel number,
-  Delivered, cancelling while packing, notes for the team, part refunds by item (Support up to €100 an
-  order), and a CSV export. The shopper gets an email when it ships and when it arrives
-- **Delivery options** and the free-shipping limit are set by staff and used by the checkout at once
-- **Review moderation:** new and reported reviews wait in a queue; Keep, or Hide with a reason
-- An overview page with the day's sales and what is waiting, narrowed to each role's areas
+**The admin area** (details and how to try it: [The admin area](#the-admin-area))
+- Three staff roles, each with only what it needs: **Support** (orders, refunds, reviews), **Sales** (products,
+  categories, bulk upload, delivery), **Admin** (everything, plus users and the audit log). The server checks
+  the role on every request, not just the menu
+- **Every staff member must use two-factor sign-in**, and can't turn it off
+- Products, categories, orders, refunds, delivery options, review moderation, bulk upload (CSV or JSON),
+  users and roles, and an **audit log** of every staff change that nobody can edit
 
-**Reviews (Project 3)**
+**Reviews**
 - Star ratings and text reviews, only from shoppers whose order with the product was delivered
-- "Helpful" votes (one per shopper, never on your own review), sorting by most helpful, and reporting
+- "Helpful" votes (one per shopper), sorting by most helpful, and reporting a review
 - A hidden review leaves the shop and the average; its author still sees it, with the reason
 
-**Your account (Project 3)**
-- Profile (name and phone), up to 10 saved addresses with a default for delivery and for billing, a
-  download of everything the shop keeps about you, and deleting the account (past orders are kept for the
-  accounts, no longer linked to you)
-- A separate billing address at checkout, and the payment reference on the confirmation
-- The contact form emails the shop's inbox (MailHog in development) with the sender as reply-to; it has a
-  CAPTCHA and a limit per address
+**The shop and your account**
+- Home, catalog and search (filters, sorting, grid or list, result count), product pages, cart, one-page
+  checkout (guest or signed in), order confirmation, About, Contact, FAQ, Terms, and a friendly 404
+- A cart preview and search suggestions in every page's header
+- Your account: profile, order history, up to 10 saved addresses, two-factor sign-in, a download of
+  everything the shop keeps about you, and deleting the account
+- Card payments through Stripe's test mode, with emails for each step (all of it from Project 2)
 
-**Cart**
-- Each line shows the product's photo, name, options, price and quantity. The totals update as you
-  add, remove or change quantities
-- The cart is saved on the server. A guest's cart is kept for 30 days; a logged-in shopper's cart
-  follows their account to any browser
-- Logging in moves the guest cart into the account's cart. If both have the same item, the bigger
-  quantity is kept (not the two added together)
-- The server sets every price and checks the stock. Adding more than is in stock says how many are
-  left; an item that sells out while in the cart is marked and left out of the total
-- "Goes with your order": suggestions in the cart from the same game, sensibly priced
+**Security**
+- Personal data is **encrypted in the database** (AES-256-GCM): accounts' email, name and phone, addresses,
+  and on orders the contact details, what was bought and the payment records. The key is outside the
+  database, in `.env`. Passwords and login tokens are stored only as one-way hashes
+- The site runs on **HTTPS** with a self-signed certificate; plain http only redirects there
+- **Rate limiting with token buckets**: short bursts are fine, a script hammering the shop gets
+  "429, try again in N seconds"
+- Every form is checked in the browser and again on the server
 
-**Checkout**
-- One page with contact, address, shipping options, the card and an order summary where quantities
-  can still change or items be removed
-- Every field is checked, in the browser and again on the server, with a message that says how to
-  fix it
-- Logged-in shoppers get their name and email from the account, and their phone and address from
-  their last order
-- The address is checked: the postcode must have the right format for the country, and for the
-  biggest cities (Tallinn, Tartu, Riga, Vilnius, Helsinki and others) it must belong to the city
-- After paying, an order confirmation page and a confirmation email
+**Images, search engines and accessibility**
+- Uploaded photos are saved in **three extra sizes** (160, 600 and 1200 px wide); a phone loads the small ones
+- Every page has its **own title** and **description**, one main heading, headings in order, and readable
+  addresses (`/catalog/{id}/walnut-chessboard-45-cm`)
+- An automated **WCAG 2.1 A** check (axe-core, plus colour contrast and 200% zoom) finds nothing on any shop
+  or account page. Photos have alt text and everything works with the keyboard
 
-**Payments**
-- Card payments through Stripe's test mode. The card is typed into Stripe's own form, so card
-  details never reach this server. Stripe checks the card number, expiry date and CVC before paying
-- The order becomes *Payment successful* or *Payment failed* only when Stripe's server tells ours
-  (a signed webhook), never because the browser says so
-- A declined card (not enough money, wrong number, expired) says why, and the shopper can try
-  another card on the same order. If Stripe can't be reached, nothing is charged and the cart is kept
-- Stripe's messages go through a **message queue** (RabbitMQ) to the part of the server that updates
-  the order. A message that keeps failing is set aside in a *dead letter queue* instead of being lost
-- Emails for a paid order, a declined payment, a cancellation and a refund. They go through a queue of
-  their own, so a broken mail server never holds up a payment
-
-**Orders**
-- Placing an order reserves the stock straight away, so two people can never buy the last item
-  twice. An unpaid order holds its items for 30 minutes, then they go back on sale
-- The order keeps a copy of each item's name and price, so later price changes don't alter it
-- *Your orders* on the account page: filter by status and date, sort, and open any order for its
-  full details and status history
-- Cancelling an order before it is packed: the items go back on sale at once and Stripe refunds the
-  card. Once packing has started the server refuses (guests can cancel from their order page too)
-
-**Security of the data**
-- Personal data is **encrypted in the database** (AES-256-GCM): the account's email, name, phone and 2FA
-  secret, saved addresses, and on orders the contact details, addresses, what was bought and the payment
-  records. Someone with a copy of the database sees only scrambled text; the key is kept outside it, in
-  `.env`. Passwords, login tokens and backup codes are stored only as one-way hashes
-- Signing in still finds the account: beside the encrypted email the database keeps a keyed hash of it,
-  which is also what stops two accounts sharing an email
-- The site runs on **HTTPS**; plain http only redirects there. The login cookie is only ever sent
-  over the encrypted connection
-- **Rate limiting with token buckets** in Redis: each address gets a bucket per sensitive action (sign-in,
-  registration, password reset, search, adding to the cart, placing orders, the contact form) and one wide
-  bucket for everything else. Short bursts are fine; a script hammering the shop gets "429, try again in N
-  seconds"
-
-**Images, search engines and accessibility (Project 3)**
-- Uploaded product photos are saved in **three extra sizes** (160, 600 and 1200 pixels wide) and each page
-  asks for the size it shows: a phone loads small files. Photos and the website's code are cached by the
-  browser for a year (their names change when they change)
-- Every page has its **own title** (under 60 characters) and **description** (155 to 160), one main heading
-  and headings in order. Product addresses are readable (`/catalog/{id}/walnut-chessboard-45-cm`) and an
-  old name in a link still finds the product
-- Checked with an automated **WCAG 2.1 A** scan (axe-core) plus colour contrast, on every shop and account
-  page: no findings. Product photos have descriptive alt text, everything works with the keyboard, and
-  at 200% zoom nothing is cut off
-
-**Load test (Project 3)**
-- Four realistic shopper journeys (browse, search, buy, sign in) run with k6 in Docker against a separate
-  copy of the shop, from 10 to 800 users at once. The numbers and the bottlenecks are in the
+**Load test**
+- Four shopper journeys (browse, search, buy, sign in) with k6, from 10 to 1,600 users at once:
   [Performance analysis report](#performance-analysis-report)
-
-**Extras beyond the brief**
-- Refunds go all the way through Stripe, and are retried every minute if Stripe is down
-- An unpaid order releases its items by itself after 30 minutes, and cancels the payment at Stripe
-- If Stripe's message about a payment is lost, a job asks Stripe directly before releasing anything
-- Cards that need a bank security check (3-D Secure) work
-- The postcode is checked against the city, not just its format
 
 **Not built yet**
 - Parcel tracking with a real courier: the parcel number is shown, but nothing asks the courier where it is
-- Contact messages are only emailed; there is no inbox for them in the staff area
-- A product's key specs on the catalog's list view
-- The demo catalog's photos are linked from the suppliers' sites, so only uploaded photos get our three sizes.
-  The ones on Shopify's image server are still sized, by Shopify (`?width=`); the other supplier has one size
+- Contact messages are only emailed; there is no inbox for them in the admin area
+- The demo catalog's photos are linked from the suppliers' sites, so only uploaded photos get our three sizes
 - Staff find a user by the **whole** email address, not the start of one: the email is encrypted
 
 ---
 
-## Database
+## The admin area
 
-PostgreSQL. The schema is created automatically on startup by numbered migration files
-(`backend/src/main/resources/db/migration`: Project 2 is `V8` to `V10`, Project 3 is `V11` to `V16`).
+### Becoming an admin
 
-### Project 3 tables
+Admin can't be given from the website, only from the server, so a stolen admin session can never make more
+admins.
 
-What Project 3 added, and how it joins the tables of the earlier projects (shown with only their keys):
+1. In the shop, **create an account** at `/register` (with a password, not Google).
+2. Straight after, make the newest account an admin:
+   ```sh
+   docker compose exec postgres psql -U app -d iloveshopping \
+     -c "UPDATE users SET role = 'ADMIN' WHERE id = (SELECT id FROM users ORDER BY created_at DESC LIMIT 1) RETURNING role"
+   ```
+   It prints `ADMIN`. (The email column is encrypted, so the command picks the newest account instead of
+   searching by email.)
+3. **Sign out and sign in again**, then open `/admin`. It asks you to **turn on two-factor sign-in** first:
+   scan the QR code with your authenticator app and type the 6-digit code
+   ([step by step](#setting-up-two-factor-login)). Then the admin area opens.
 
-```mermaid
-erDiagram
-    users ||--o{ user_addresses : "saves (up to 10)"
-    users |o--o{ audit_log : "did (null once deleted)"
-    users |o--o{ import_jobs : uploaded
-    product_reviews ||--o{ review_votes : "voted helpful"
-    users ||--o{ review_votes : votes
-    product_reviews ||--o{ review_reports : reported
-    users |o--o{ review_reports : reports
-    orders ||--o{ order_notes : "staff notes"
-    orders ||--o{ refunds : "part refunds"
-    refunds ||--|{ refund_lines : "which items"
-    delivery_options ||--o{ orders : "shipped with"
+### Giving someone the Support or Sales role
 
-    users {
-        uuid id PK
-        text email "encrypted"
-        varchar email_hash UK "keyed hash, for sign-in"
-        text full_name "encrypted"
-        text phone "encrypted"
-        text two_factor_secret "encrypted"
-        varchar role "CUSTOMER, SUPPORT, SALES or ADMIN"
-        timestamp last_sign_in_at
-    }
-    user_addresses {
-        uuid id PK
-        uuid user_id FK
-        varchar label "Home, Work"
-        text first_name "encrypted"
-        text last_name "encrypted"
-        text street "encrypted"
-        text postcode "encrypted"
-        text city "encrypted"
-        varchar country
-        text phone "encrypted"
-        boolean default_delivery
-        boolean default_billing
-    }
-    audit_log {
-        bigint id PK
-        timestamp at
-        uuid actor_id FK
-        varchar actor_role
-        varchar kind "ORDERS, PRODUCTS, REVIEWS, ACCESS"
-        varchar action
-        varchar target_type
-        varchar target_id
-        varchar change_from
-        varchar change_to
-        varchar ip "first two parts only"
-    }
-    import_jobs {
-        uuid id PK
-        varchar file_name
-        varchar format "CSV or JSON"
-        uuid uploaded_by FK
-        varchar status "CHECKED, DONE, FAILED"
-        int row_count
-        jsonb counts
-        jsonb errors
-        jsonb planned
-    }
-    delivery_options {
-        varchar id PK "standard, express"
-        varchar name
-        numeric price
-        smallint days_min
-        smallint days_max
-        varchar countries "array"
-        boolean active
-        boolean free_over_limit
-    }
-    shop_settings {
-        smallint id PK "always 1"
-        numeric free_shipping_from
-        boolean free_shipping_on
-    }
-    orders {
-        uuid id PK
-        varchar shipping_method FK
-        varchar carrier
-        text tracking_number "encrypted"
-        text billing_name "encrypted, null = delivery address"
-    }
-    order_notes {
-        bigint id PK
-        uuid order_id FK
-        uuid author_id FK
-        varchar note
-    }
-    refunds {
-        uuid id PK
-        uuid order_id FK
-        numeric amount
-        boolean shipping
-        varchar reason
-        varchar status "DUE, PENDING, SUCCEEDED"
-        uuid requested_by FK
-    }
-    refund_lines {
-        uuid refund_id PK, FK
-        smallint position PK "the order line"
-        int quantity
-        numeric amount
-    }
-    product_reviews {
-        uuid id PK
-        varchar status "NEW, LIVE, REPORTED, HIDDEN"
-        varchar hidden_reason
-        int helpful_count
-    }
-    review_votes {
-        uuid review_id PK, FK
-        uuid user_id PK, FK
-    }
-    review_reports {
-        bigint id PK
-        uuid review_id FK
-        uuid user_id FK
-        varchar reason
-        timestamp resolved_at
-    }
-```
+1. Create a second account in another browser (or a private window).
+2. As the admin: **Users and roles** → search for that account's **whole email** → choose the role → type
+   your current 2FA code. The person's open sessions get the new role at once.
+3. Signed in as that account, `/admin` asks it to turn on two-factor too, then shows only that role's pages.
 
-| Table | Holds |
-|---|---|
-| `users` (changed) | Since `V16` the email, name, Google photo link and 2FA secret are encrypted. Sign-in finds the account by `email_hash`, a keyed hash of the email |
-| `user_addresses` | A shopper's saved addresses, encrypted, with one default for delivery and one for billing |
-| `audit_log` | Every staff change and staff sign-in. A database trigger refuses any edit or delete for 12 months |
-| `import_jobs` | One bulk upload: what the check found, row by row, and what the import changed |
-| `delivery_options`, `shop_settings` | The delivery options with their prices and dates, and the free-shipping limit. The checkout reads them; an order keeps a copy of the name and days |
-| `order_notes` | Staff notes on an order |
-| `refunds`, `refund_lines` | Part refunds: how much, why, for which order lines, and where Stripe stands |
-| `review_votes` | One "helpful" vote per shopper per review (the key stops a second) |
-| `review_reports` | A shopper's report of a review, until staff keep or hide it |
+### What each page does
 
-### Project 2 tables
+| Page | Who sees it | What to try |
+|---|---|---|
+| **Overview** | Everyone on staff | What's waiting (orders to pack, reviews to check), today's sales, recent changes |
+| **Orders** | Support, Admin | Pay for an order in the shop first ([test cards](#test-cards)). Then open it: **Start packing** → **Shipped** (courier and parcel number) → **Delivered**. The shopper gets an email at each step ([MailHog](http://localhost:8025)). Also: cancel while packing, a refund for one item, a team note, printable packing slips |
+| **Delivery options** | Sales, Admin | Change a price or the free-shipping limit, then open the checkout: it shows the new price at once |
+| **Products** | Sales, Admin | Add a product (every field, photos), edit one, hide or delete it. Tick several rows to show, hide, move or reprice them together. Export to CSV |
+| **Categories** | Sales, Admin | Add, rename, hide, drag to reorder, move under another. Only an empty one can be deleted |
+| **Bulk upload** | Sales, Admin | Upload a file from [docs/examples/](docs/examples/): `products-good.csv` and `products.json` pass the check; `products-bad.csv` has one mistake per line and the page names each one. Nothing changes until you confirm, and then all rows go in or none |
+| **Reviews** | Support, Admin | New and reported reviews wait here: **Keep**, or **Hide** with a reason. A hidden review leaves the product page and its average |
+| **Users and roles** | Admin | Find an account, change its role (needs your 2FA code) |
+| **Audit log** | Admin | Every staff change and sign-in: who, what, before and after. Nobody can edit or delete it |
 
-How the cart and order tables connect to `users` and `products` from Project 1 (the Project 1
-diagram is in the [Project 1 section](#project-1-accounts-login-and-the-catalog)):
+**Try the role limits:** as Sales, change a price by more than half: refused. As Support, refund more than
+€100 on one order: refused. As Support, open `/admin/products`: not in the menu, and the server refuses it
+too. Without two-factor, every admin page says to turn it on first.
 
-```mermaid
-erDiagram
-    users |o--o| carts : "owns (a guest cart has no user)"
-    carts ||--o{ cart_items : holds
-    products ||--o{ cart_items : "is in"
-    users |o--o{ orders : "places (a guest order has no user)"
-    orders ||--|{ order_items : "copies of the cart lines"
-    products |o--o{ order_items : "was (null once deleted)"
-    orders ||--|{ order_status_history : "status changes"
-    orders ||--o| payments : "paid by"
-
-    users {
-        uuid id PK
-    }
-    products {
-        uuid id PK
-        numeric price
-        int stock_quantity "never below 0"
-    }
-    carts {
-        uuid id PK
-        uuid user_id FK, UK "null for a guest"
-        varchar guest_token_hash UK "null for a user"
-        timestamp created_at
-        timestamp updated_at
-    }
-    cart_items {
-        uuid cart_id PK, FK
-        uuid product_id PK, FK
-        int quantity "1 to 10"
-        timestamp added_at
-    }
-    orders {
-        uuid id PK
-        varchar number UK "TV-10001"
-        uuid user_id FK "null for a guest"
-        varchar guest_token_hash "null for a user"
-        varchar status
-        text email "encrypted"
-        text phone "encrypted"
-        text first_name "encrypted"
-        text last_name "encrypted"
-        text street "encrypted"
-        text flat "encrypted"
-        text postcode "encrypted"
-        text city "encrypted"
-        varchar country
-        varchar shipping_method
-        numeric subtotal
-        numeric shipping_cost
-        numeric vat
-        numeric total
-        timestamp hold_until
-        timestamp placed_at
-        timestamp status_changed_at
-    }
-    order_items {
-        bigint id PK
-        uuid order_id FK
-        uuid product_id FK "null once deleted"
-        smallint position
-        text product_name "encrypted"
-        text options "encrypted"
-        text image_url "encrypted"
-        numeric unit_price
-        int quantity
-        numeric line_total
-    }
-    order_status_history {
-        bigint id PK
-        uuid order_id FK
-        varchar from_status
-        varchar to_status
-        varchar actor "SHOPPER, STRIPE, TIMER or ADMIN"
-        varchar note
-        timestamp created_at
-    }
-    payments {
-        uuid id PK
-        uuid order_id FK, UK
-        varchar provider
-        text provider_payment_id "encrypted"
-        numeric amount
-        varchar currency
-        varchar status
-        text card_brand "encrypted"
-        text card_last4 "encrypted"
-        text failure_code "encrypted"
-        timestamp created_at
-        timestamp updated_at
-    }
-    processed_payment_events {
-        varchar event_id PK
-        varchar type
-        timestamp processed_at
-    }
-```
-
-| Table | Holds |
-|---|---|
-| `carts` | One cart per logged-in user, or per guest (found by a random cookie, stored only as a hash). Exactly one of the two is set |
-| `cart_items` | A product and its quantity in a cart (1–10). No price: it is read fresh from `products` |
-| `orders` | One order: who placed it, the delivery address (encrypted), shipping method, the money, its status, and until when its items are held |
-| `order_items` | A copy of each cart line at the moment of ordering: name and photo (encrypted), price and quantity |
-| `order_status_history` | Every status change: from, to, who made it (shopper, Stripe, timer, admin) and when |
-| `payments` | The Stripe payment behind an order, its card brand and last 4 digits once paid (encrypted), and where a refund stands. Never the card number |
-| `processed_payment_events` | Stripe events already handled, so one sent twice is applied once |
-
-**Order statuses.** *Pending payment* → *Payment successful* or *Payment failed* (Stripe decides) →
-*Processing* → *Shipped* → *Delivered*. A paid order can become *Cancelled* and then *Refunded*; an
-unpaid one becomes *Cancelled* when its 30 minutes run out. Every allowed move, and who may make
-it, is in [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md).
-
-**Encrypted columns.** Marked *encrypted* in the diagram. Ids, statuses, dates, money and the country
-stay readable, because the database filters and sorts by them, and encrypted text can't be searched.
-
----
-
-## How it works
-
-| Part | Technology |
-|---|---|
-| Website | React 18, TypeScript, Vite. Redux Toolkit and React Query for state, Axios for requests, Stripe.js for the card form |
-| Server | Java 21, Spring Boot 4, Spring Security, stripe-java |
-| Database | PostgreSQL 16, with the schema managed by Flyway |
-| Sessions | Redis 7 |
-| Message queue | RabbitMQ 4 |
-| Email (development) | MailHog |
-| Payments | Stripe (test mode), with the Stripe CLI forwarding its webhooks |
-| Everything runs in | Docker Compose: 7 containers (website, server, database, Redis, RabbitMQ, MailHog, Stripe CLI) |
-
-The server is one application split into areas: **users**, **login**, **catalog**, **cart**,
-**orders** and **payments**. Each area has its own code and talks to the others only through a
-small interface, so an area could be split out into its own service later if it ever needs to scale
-on its own.
-
-**The cart.** A guest's cart is found by a random token in a cookie JavaScript can't read; the
-database keeps only a hash of it. A logged-in shopper's cart belongs to their account. Prices are
-never stored in the cart: they are read from the products every time, so the cart can't show an old
-price.
-
-**Placing an order.** In one database transaction the server takes the stock for every item, copies
-the cart into the order, and empties those lines from the cart. Stock is taken with a single
-"take it only if there's enough" update, so when two people buy the last item at the same moment,
-exactly one succeeds and the other is told it sold out. If any item is short, the whole order is
-undone.
-
-**Paying (Stripe).** The server asks Stripe for a payment for the order's total. The browser shows
-Stripe's card form, which sends the card straight to Stripe, and Stripe tells our server the result
-by calling its webhook. The server checks that call's signature, so a fake "paid" message is
-rejected. If the webhook is lost, a job that runs every minute asks Stripe directly before releasing
-an unpaid order's items.
-
-**The message queue.** The webhook only checks the signature, puts the payment's result on a RabbitMQ
-queue and answers Stripe at once. A separate listener takes it off the queue and, in one database
-transaction, updates the order, its stock and its history. Each Stripe message is applied once, even
-if it arrives twice. If applying it fails, it is retried twice more; after that it is moved to a
-*dead letter queue*, where it waits to be looked at and moved back, instead of being lost or retried
-forever.
-
-**Emails.** Only after that transaction has saved does the server put "this order needs an email" on a
-second queue, so nobody gets an email about a change that didn't happen. A second listener writes the
-email from the order and sends it. If the mail server is down, the email is retried and then waits in
-its own dead letter queue, while payments carry on.
-
-**Cancelling and refunds.** A paid order can be cancelled until packing starts. In one transaction the
-order becomes *Cancelled* and its stock goes back on sale; then the server asks Stripe for the refund.
-When Stripe confirms it, the order becomes *Refunded*. If Stripe can't be reached, the order stays
-cancelled and a job asks Stripe again every minute. Each refund is sent with the order's own id as a
-key, so asking twice never refunds twice.
-
-**Encryption in the database.** Before an order is saved, its personal and payment details are
-encrypted with AES-256-GCM, each value with a fresh random starting value, so the same address saved
-twice looks different both times, and a changed byte is detected instead of decrypted to nonsense.
-The key comes from `.env` and is never in the code or the database.
-
-**HTTPS.** The website container (nginx) serves the site over TLS 1.2 or 1.3 with a certificate it
-makes on first start. Plain http only redirects to https.
-
-**Accounts are encrypted too.** The email, name, avatar link and 2FA secret in `users` are encrypted the
-same way. An encrypted email can't be searched, so beside it the database keeps a *blind index*: a keyed
-hash (HMAC-SHA256) of the lower-cased address. Sign-in hashes what was typed and looks that up, and a
-unique index on it stops two accounts sharing an email. Without the key the hash can't be reversed or
-recomputed from a list of guesses. Rows saved before this existed are encrypted on the next start.
-
-**Rate limits (token buckets).** Each limit is a bucket of tokens in Redis, per address and action:
-sign-in has 10, refilled evenly over a minute (one every 6 seconds). A request takes a token; an empty bucket answers 429 with
-how long to wait. Reading, refilling and taking happen in one Redis script, so two requests can't spend the
-last token twice, and every copy of the server shares the same buckets.
-
-**Images.** An uploaded photo is saved at its own size plus 160, 600 and 1200 pixels wide. Each page tells
-the browser which sizes exist (`srcset`) and how wide the photo will show (`sizes`), and the browser picks
-the smallest that is sharp enough. nginx serves them straight from disk with a year-long cache. For
-production the same files would go to object storage behind a CDN (S3 and CloudFront, say), which needs
-only a new storage class in the server; the names already change whenever a photo does, so nothing
-cached is ever stale.
-
-**Search engines.** Each page sets its own title and description, products have readable addresses, and
-pages use real headings, lists, navigation and buttons, so the same structure helps screen readers.
+**To write a review to moderate:** a review needs a delivered order. Buy a product as a shopper, mark the
+order **Delivered** as staff, then write a review on that product's page. It shows up under **Reviews**.
 
 ---
 
@@ -601,20 +219,19 @@ pages use real headings, lists, navigation and buttons, so the same structure he
 
 What each checklist item should show is in [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md).
 
-### In the website
+### In the shop
 
 | Try this | Where |
 |---|---|
-| Add to cart, change quantities, see suggestions | Any product page, then the cart in the header |
-| Ask for more than is in stock | A product page that says *Only N left*: raise its quantity in the cart past N, and the cart says how many are left |
-| Keep a cart as a guest, then log in | Add items logged out, then log in: they move into the account's cart |
-| Check out | The cart → **Checkout** (as a guest or logged in) |
-| See prefilled details | Log in, place one order, then start another: phone and address are filled in |
-| See the address check | Checkout with city `Tallinn` and postcode `50090` (a Tartu postcode) |
-| Pay, and see a declined card | Checkout with a test card from the table below |
-| The emails for paid, declined, cancelled, refunded | [MailHog](http://localhost:8025) |
-| Your orders, filters, sorting, order details | `/account/orders`, while logged in |
-| Cancel an order and get a refund | Open a paid order → **Cancel order**. Watch the product's stock go back up |
+| Featured products and categories | `/` |
+| Filters, sorting, grid or list, paging | `/catalog`, or search from the header |
+| Search suggestions while you type | The header's search box: type `wal` |
+| Cart preview | Add something, then click the bag in the header |
+| Reviews: sort by most helpful, vote, report | Any product page with reviews, signed in |
+| Check out as a guest or signed in | The cart → **Checkout**, then a [test card](#test-cards) |
+| Your profile, orders, addresses, data download | `/account` while signed in |
+| Contact form | `/contact`: the message arrives in [MailHog](http://localhost:8025) |
+| About, FAQ, Terms, 404 | `/about`, `/faq`, `/legal/terms`, any made-up address |
 
 ### Test cards
 
@@ -629,65 +246,295 @@ Any future expiry date, any CVC, any postcode:
 | `4000 0000 0000 0127` | Declined: wrong CVC |
 | `4242 4242 4242 4241` | Stripe's form says the number is wrong, before anything is sent |
 
-After a declined card the order page offers **Try another card** for the same order. Payments and
-refunds show under **Payments** in the Stripe dashboard (test mode).
+### Checking security, SEO, accessibility and load
 
-### Seeing the encryption
+| Check | How |
+|---|---|
+| Data is encrypted in the database | `docker compose exec postgres psql -U app -d iloveshopping -c "SELECT email, full_name FROM users LIMIT 3"`: scrambled `v1:` text, while signing in works. Same for orders: `... -c "SELECT number, first_name, street, total FROM orders LIMIT 3"` |
+| HTTPS | Click the padlock at <https://localhost:5443>, or `curl -I http://localhost:5173` to see the redirect |
+| Rate limiting | `for i in $(seq 12); do curl -ks -o /dev/null -w "%{http_code} " -X POST https://localhost:5443/auth/login -H "Content-Type: application/json" -d "{\"email\":\"try$i@example.com\",\"password\":\"wrong-password\"}"; done`: `401` ten times, then `429` |
+| Photo sizes | Upload a photo to a product in the admin area, then open its page with the browser's network tab: a phone-sized window loads the 160 or 600 px file |
+| Titles, headings, contrast, alt text, 200% zoom | `cd frontend && bun run a11y-check / /catalog /bag /contact` while the shop runs |
+| 320, 768, 1024 and 1440 px screens | `cd frontend && bun run layout-check --widths=320,768,1024,1440 / /catalog /bag`, or resize the browser |
+| The load test | `loadtest/run.sh 50 400` (about 4 minutes), then `loadtest/run.sh down` |
 
-Place an order, then look at the table directly:
-
-```sh
-docker compose exec postgres psql -U app -d iloveshopping \
-  -c "SELECT number, first_name, street, city, total FROM orders ORDER BY placed_at DESC LIMIT 3"
-```
-
-The names and addresses show as `v1:` followed by scrambled text, while the order number and total
-are readable. The same order on the website shows the real address.
-
-For the connection, open <https://localhost:5443> and click the padlock (or "Not secure") next to the
-address: the connection is TLS. From a terminal, `curl -kIv https://localhost:5443 2>&1 | grep -E "SSL connection|HTTP/"`
-shows the same, and `curl -I http://localhost:5173` shows the redirect to https.
-
-Any database tool works too (VS Code's SQLTools, DBeaver, pgAdmin): host `localhost`, port `5432`,
+Any database tool works too (DBeaver, pgAdmin, VS Code's SQLTools): host `localhost`, port `5432`,
 database `iloveshopping`, user `app`, password `changeme`.
 
-### Trying the Project 3 checks
+---
 
-| Try this | How |
+## Database
+
+PostgreSQL. The tables are created on startup by numbered migration files in
+`backend/src/main/resources/db/migration` (`V1` to `V16`). The diagram is split in three so it stays
+readable; `users`, `products` and `orders` appear in more than one, with only their key. *Encrypted* marks
+columns stored scrambled.
+
+**Catalog and reviews**
+
+```mermaid
+erDiagram
+    categories |o--o{ categories : "parent of"
+    categories ||--o{ products : holds
+    brands |o--o{ products : makes
+    products ||--o{ product_images : "has photos"
+    products ||--o{ product_reviews : "is reviewed"
+    users ||--o{ product_reviews : writes
+    product_reviews ||--o{ review_votes : "voted helpful"
+    users ||--o{ review_votes : votes
+    product_reviews ||--o{ review_reports : "is reported"
+    users |o--o{ review_reports : reports
+
+    categories {
+        int id PK
+        int parent_id FK
+        varchar name
+        varchar slug UK
+        int position
+        boolean active
+    }
+    brands {
+        int id PK
+        varchar name
+        varchar slug UK
+    }
+    products {
+        uuid id PK
+        varchar sku UK
+        int category_id FK
+        int brand_id FK
+        varchar name
+        numeric price
+        int stock_quantity "never below 0"
+        jsonb attributes
+        numeric average_rating
+        boolean active
+        timestamp archived_at
+    }
+    product_images {
+        int id PK
+        uuid product_id FK
+        varchar url
+        text alt_text
+        int display_order
+    }
+    product_reviews {
+        uuid id PK
+        uuid product_id FK
+        uuid user_id FK
+        int rating "1 to 5"
+        varchar title
+        text body
+        varchar status "NEW, LIVE, REPORTED, HIDDEN"
+        int helpful_count
+    }
+    review_votes {
+        uuid review_id PK, FK
+        uuid user_id PK, FK
+    }
+    review_reports {
+        bigint id PK
+        uuid review_id FK
+        uuid user_id FK
+        varchar reason
+    }
+    users {
+        uuid id PK
+    }
+```
+
+**Cart, orders and payments**
+
+```mermaid
+erDiagram
+    users |o--o| carts : "owns (a guest cart has none)"
+    carts ||--o{ cart_items : holds
+    products ||--o{ cart_items : "is in"
+    users |o--o{ orders : "places (a guest order has none)"
+    delivery_options ||--o{ orders : "ships"
+    orders ||--|{ order_items : contains
+    products |o--o{ order_items : "was"
+    orders ||--|{ order_status_history : "status changes"
+    orders ||--o| payments : "paid by"
+    orders ||--o{ refunds : "refunded by"
+    refunds ||--|{ refund_lines : "for items"
+    orders ||--o{ order_notes : "staff notes"
+
+    carts {
+        uuid id PK
+        uuid user_id FK, UK
+        varchar guest_token_hash UK
+    }
+    cart_items {
+        uuid cart_id PK, FK
+        uuid product_id PK, FK
+        int quantity "1 to 10"
+    }
+    orders {
+        uuid id PK
+        varchar number UK "TV-10001"
+        uuid user_id FK
+        varchar status
+        text email "encrypted"
+        text street "encrypted"
+        text billing_street "encrypted"
+        varchar shipping_method FK
+        text tracking_number "encrypted"
+        numeric total
+        timestamp placed_at
+    }
+    order_items {
+        bigint id PK
+        uuid order_id FK
+        uuid product_id FK
+        text product_name "encrypted"
+        numeric unit_price
+        int quantity
+    }
+    order_status_history {
+        bigint id PK
+        uuid order_id FK
+        varchar from_status
+        varchar to_status
+        varchar actor
+    }
+    payments {
+        uuid id PK
+        uuid order_id FK, UK
+        text provider_payment_id "encrypted"
+        numeric amount
+        varchar status
+        text card_last4 "encrypted"
+    }
+    refunds {
+        uuid id PK
+        uuid order_id FK
+        numeric amount
+        varchar status
+    }
+    refund_lines {
+        uuid refund_id PK, FK
+        smallint position PK
+        int quantity
+    }
+    order_notes {
+        bigint id PK
+        uuid order_id FK
+        varchar note
+    }
+    delivery_options {
+        varchar id PK "standard, express"
+        varchar name
+        numeric price
+        boolean active
+    }
+    users {
+        uuid id PK
+    }
+    products {
+        uuid id PK
+    }
+```
+
+**Accounts and staff**
+
+```mermaid
+erDiagram
+    users ||--o{ user_addresses : saves
+    users |o--o{ audit_log : "did"
+    users |o--o{ import_jobs : uploaded
+
+    users {
+        uuid id PK
+        text email "encrypted"
+        varchar email_hash UK "keyed hash, for sign-in"
+        varchar password_hash
+        text full_name "encrypted"
+        text phone "encrypted"
+        varchar role "CUSTOMER, SUPPORT, SALES, ADMIN"
+        boolean two_factor_enabled
+        text two_factor_secret "encrypted"
+    }
+    user_addresses {
+        uuid id PK
+        uuid user_id FK
+        text street "encrypted"
+        text city "encrypted"
+        boolean default_delivery
+    }
+    audit_log {
+        bigint id PK
+        uuid actor_id FK
+        varchar action
+        varchar change_from
+        varchar change_to
+        timestamp at
+    }
+    import_jobs {
+        uuid id PK
+        uuid uploaded_by FK
+        varchar status "CHECKED, DONE, FAILED"
+        jsonb errors
+    }
+```
+
+| Table | Holds |
 |---|---|
-| Bulk upload | As Sales or Admin: **Products → Bulk upload**, then a file from [docs/examples/](docs/examples/). `products-good.csv` and `products.json` check clean; `products-bad.csv` has one mistake per line (lines 3 to 11) and the check names each line and column |
-| Accounts are encrypted | `docker compose exec postgres psql -U app -d iloveshopping -c "SELECT email, full_name, email_hash FROM users LIMIT 3"`: `v1:` text and a 64-character hash, while signing in works as before |
-| Rate limiting | `for i in $(seq 12); do curl -ks -o /dev/null -w "%{http_code} " -X POST https://localhost:5443/auth/login -H "Content-Type: application/json" -d "{\"email\":\"try$i@example.com\",\"password\":\"wrong-password\"}"; done`: 401 ten times, then 429 (each try a new email, so only the address's bucket counts) |
-| Photo sizes | Upload a photo to a product, then `ls` the `product_images_data` volume, or open the product page and look at the network tab: the page loads the 600 px file, a phone the 160 or 600 |
-| Titles, descriptions, headings, contrast, 200% zoom | `cd frontend && bun run a11y-check / /catalog /bag /contact` while the shop runs. `--login=email:password /account` checks the account pages |
-| Readable product address | Open any product: the address ends in its name. Change that name part and the page still opens and corrects it |
-| The load test | `loadtest/run.sh` (about 10 minutes), then `loadtest/run.sh down`. See the [report](#performance-analysis-report) |
+| `categories`, `brands` | The category tree (each can have a parent) and the brands |
+| `products`, `product_images` | Products with price, stock, weight and size in both unit systems, and their photos |
+| `product_reviews`, `review_votes`, `review_reports` | Reviews (1–5 stars and text), one "helpful" vote per shopper, and reports waiting for staff |
+| `users`, `user_addresses` | Accounts (personal columns encrypted) and up to 10 saved addresses each |
+| `carts`, `cart_items` | One cart per account or per guest. No prices: they're read fresh from `products` |
+| `orders`, `order_items`, `order_status_history` | An order, a copy of what was bought, and every status change |
+| `payments`, `refunds`, `refund_lines` | The Stripe payment behind an order, and whole or part refunds |
+| `delivery_options`, `shop_settings` | Delivery options staff can edit, and the free-shipping limit |
+| `order_notes`, `audit_log`, `import_jobs` | Staff notes on orders, the uneditable log of staff actions, and bulk uploads |
+| `processed_payment_events` | Stripe messages already handled, so one sent twice is applied once |
 
-### Seeing the queues
+Order statuses and who may move them: [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md). Ids,
+statuses, dates and money stay readable, because the database filters and sorts on them.
 
-Open RabbitMQ at <http://localhost:15672> → **Queues**. `orders.payment-events` takes Stripe's results,
-`orders.emails` the emails, and each has a `.dlq` (dead letter queue) beside it.
+---
 
-- **A bad message set aside:** open `orders.payment-events` → **Publish message**, type `not json` as
-  the payload, publish, and after a few seconds it appears in `orders.payment-events.dlq`.
-- **An email waiting out a mail server failure:** run `docker compose stop mailhog`, pay an order, and
-  the email lands in `orders.emails.dlq`. Run `docker compose start mailhog`, open that queue →
-  **Move messages** to `orders.emails`, and it arrives.
+## How it works
 
-### The API
-
-The website covers everything; these are the Project 2 endpoints behind it.
-
-| Endpoint | Does |
+| Part | Technology |
 |---|---|
-| `GET /cart`, `POST /cart/items`, `PUT/DELETE /cart/items/{productId}` | The cart (guests too, by cookie) |
-| `POST /cart/merge` | Move the guest cart into the account's (logged in) |
-| `POST /orders`, `GET /orders/{id}` | Place an order from the cart, read it (guests too) |
-| `POST /orders/{id}/payment` | Pay a declined order again with another card |
-| `POST /orders/{id}/cancel` | Cancel a paid order before packing, with a refund (guests too) |
-| `GET /orders?status=&from=&to=&sort=&page=` | Your orders, filtered and sorted (logged in) |
-| `GET /orders/last-delivery` | The phone and address of your last order, for the checkout (logged in) |
-| `POST /payments/webhook` | Where Stripe reports payments (checked by signature) |
+| Website | React 18, TypeScript, Vite. Redux Toolkit and React Query for state, Axios for requests, Stripe.js for the card form |
+| Server | Java 21, Spring Boot 4, Spring Security, stripe-java |
+| Database | PostgreSQL 16, with the schema managed by Flyway |
+| Sessions and rate limits | Redis 7 |
+| Message queue | RabbitMQ 4 |
+| Email (development) | MailHog |
+| Payments | Stripe (test mode), with the Stripe CLI forwarding its webhooks |
+| Everything runs in | Docker Compose: 7 containers (website, server, database, Redis, RabbitMQ, MailHog, Stripe CLI) |
+
+The server is one application split into areas: users, login, catalog, cart, orders, payments, delivery,
+audit, overview and support. Each area talks to the others only through a small interface.
+
+**Staff roles and two-factor.** One table in the server (`auth/StaffArea.java`) says which role may use which
+area. Every admin request is checked against it, and also needs a session that gave a 2FA code. Changing
+someone's role ends their open sessions, so the new role applies at once.
+
+**Audit log.** Every staff change and sign-in writes a row: who, what, before and after. A database trigger
+refuses any edit or delete for 12 months, so not even the server can rewrite history.
+
+**Bulk upload.** The file is checked row by row against the same rules as the product form, without changing
+anything. Confirming imports every row in one database transaction: all or nothing.
+
+**Encryption.** Personal and payment details are encrypted with AES-256-GCM before they're saved; a changed
+byte is detected instead of decrypted to nonsense. An encrypted email can't be searched, so the database
+also keeps a keyed hash of it, which is what sign-in looks up. The key comes from `.env`.
+
+**Rate limits (token buckets).** Each address gets a bucket of tokens per action in Redis (sign-in: 10,
+refilled one every 6 seconds). A request takes a token; an empty bucket answers 429 with how long to wait.
+
+**Images.** An uploaded photo is saved at its own size plus 160, 600 and 1200 px wide, and the browser picks
+the smallest that is sharp enough. nginx serves them with a year-long cache. In production a CDN would sit in
+front; a photo's name changes whenever it does, so nothing cached is ever stale.
+
+**Search engines.** Each page sets its own title and description, products have readable addresses, and
+pages use real headings, lists, navigation and buttons, which also helps screen readers.
 
 ---
 
@@ -701,31 +548,23 @@ cd backend && mvn verify       # server: 444 tests, a few minutes
 cd frontend && bunx vitest run # website: 132 tests, seconds
 ```
 
-**Latest run (2026-10-12): 576 tests, all passing.** Server tests run against a real PostgreSQL,
-Redis and RabbitMQ that the tests start themselves. Stripe and the mail server are replaced by
-stand-ins, so the tests don't need your Stripe keys or the internet.
-
-What the brief asks for, and where it is:
+**Latest run (2026-10-12): 576 tests, all passing.** Server tests run against a real PostgreSQL, Redis and
+RabbitMQ that the tests start themselves; Stripe and the mail server are replaced by stand-ins, so no keys
+or internet are needed.
 
 | The brief asks for | Tests |
 |---|---|
-| Unit: cart functionality | `CartServiceTest` (totals, short and sold-out lines, the limit of 10), `CartPanel.test.tsx` |
-| Unit: order summary calculations | `OrderTotalsTest` (subtotal, shipping, free shipping from €100, VAT rounding), `shipping.test.ts` |
-| Flow: registration | `AuthControllerIT` (`register_succeeds_thenDuplicateEmailConflicts`, `register_withInvalidBody_returns400WithFieldErrors`), `RegisterPage.test.tsx` |
-| Flow: checkout, guest and logged in | `OrderIT` (`aGuestOrder_reservesTheStock_copiesTheCart_andEmptiesIt`, `aSignedInCheckout_goesFromCartToPaid_onlyWhenStripeSaysSo`), `CheckoutPage.test.tsx` |
-| Manual: encryption in transit and at rest | [Seeing the encryption](#seeing-the-encryption), plus `EncryptionIT` |
-| Unit: product data model (Project 3) | `ProductRequestValidationTest`, `CsvReaderTest`, `PriceGuardTest`, `ImageProcessorTest` |
-| Unit: JWT handling | `JwtServiceTest` (making, checking, expiry, a changed signature) |
-| Unit: input validation | `ProductRequestValidationTest`, `authRules.test.ts`, `checkoutRules.test.ts`, `addressRules.test.ts`, and `InputValidationIT` on the API |
-| API endpoints and the database | Every `*IT`: each calls the API and checks the rows, e.g. `StaffCatalogIT`, `ImportIT`, `StaffOrderIT`, `AccountIT`, `UserEncryptionIT` |
-| Flow: product search | `SearchIT` (ranking, typo fallback, filters, sorting, paging, suggestions) |
-| Security: rate limiting | `TokenBucketIT` (burst, refill, wait time), `RateLimitIT` (every limited endpoint, spoofed addresses, the general bucket) |
-| Manual: accessibility, SEO, load | `bun run a11y-check`, `bun run layout-check`, `loadtest/run.sh` ([report](#performance-analysis-report)) |
+| Unit: product data model | `ProductRequestValidationTest`, `PriceGuardTest`, `CsvReaderTest` |
+| Unit: cart | `CartServiceTest`, `CartPanel.test.tsx` |
+| Unit: order summary | `OrderTotalsTest`, `shipping.test.ts` |
+| Unit: JWT | `JwtServiceTest` |
+| Unit: input validation | `authRules.test.ts`, `checkoutRules.test.ts`, `addressRules.test.ts`, `InputValidationIT` |
+| API endpoints and the database | Every `*IT`, e.g. `StaffCatalogIT`, `StaffOrderIT`, `ImportIT`, `AccountIT`, `ReviewModerationIT` |
+| Flow: product search | `SearchIT` |
+| Security: rate limiting | `TokenBucketIT`, `RateLimitIT` |
+| Security: admin roles and 2FA | `StaffAccessIT`, `StaffUserIT`, `AuditLogIT` |
 
-Some tests exist to prove the hard cases: two buyers racing for the last item, the same Stripe
-message twice, a forged webhook, Stripe being unreachable, a message that can never be read ending in
-the dead letter queue, a double-clicked Cancel refunding once, and the database holding only
-encrypted text. How the tests are organised is in [backend/README.md](backend/README.md#tests) and
+How the tests are organised: [backend/README.md](backend/README.md#tests) and
 [frontend/README.md](frontend/README.md#tests).
 
 ---
@@ -847,6 +686,10 @@ To run it yourself: `loadtest/run.sh` (the steps 10 to 400), or `loadtest/run.sh
 - **Port already in use:** change `FRONTEND_PORT`, `FRONTEND_HTTPS_PORT` or `BACKEND_PORT` in `.env`
   and start again.
 - **Server won't start after an update:** run `./start.sh reset` to start with a fresh database.
+- **The admin pages only say "turn on two-factor sign-in":** expected for every staff account until it has
+  2FA. Turn it on there, and the pages open.
+- **`/admin` sends you back to the shop after making yourself admin:** sign out and in again. The role is read
+  at sign-in.
   This includes a database made while Project 3 was being built, before its migrations were final.
 - **`bun run a11y-check` can't find a browser:** it uses Playwright's Chromium. Run
   `bunx playwright-core install chromium-headless-shell` in `frontend/`, or point `CHROME_PATH` at a Chrome or Chromium.
@@ -863,15 +706,162 @@ To run it yourself: `loadtest/run.sh` (the steps 10 to 400), or `loadtest/run.sh
 | Folder or file | What it is |
 |---|---|
 | [backend/](backend/README.md) | The server. Its README maps every feature to the file that handles it, and explains the tests |
-| [frontend/](frontend/README.md) | The website. Its README lists the pages, folders and tests |
+| [frontend/](frontend/README.md) | The website. Its README lists the pages, folders and tests; the admin area is in `frontend/src/admin/` |
 | [tools/catalog-import/](tools/catalog-import/README.md) | The Python scripts that build the demo catalog |
 | [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | Answers to the review checklist, with code and test references |
-| [docs/](docs/) | The assignment briefs, the Project 1 ERD image, and example bulk upload files in `docs/examples/` |
+| [docs/](docs/) | The assignment briefs and example bulk upload files in `docs/examples/` |
 | [loadtest/](loadtest/) | The load test: k6 script, the separate stack it runs against, and each run's results |
 | `rabbitmq/` | Which RabbitMQ plugins are on (the management page and Move messages) |
 | `CLAUDE.md`, `claude-docs/`, `.claude/` | Instructions and notes for Claude Code, the AI assistant used while building this |
 | `homework/` | The author's study notes for the topics in this project |
 | `start.sh`, `docker-compose.yml`, `.env.example` | Startup script, container setup, and the list of settings |
+
+---
+
+## Project 2: cart, checkout, payments and orders
+
+Project 2 is finished and everything in it still works. Its brief is in
+[docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md) and its review answers are in
+[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md#project-2).
+
+<details>
+<summary><b>Show Project 2</b>: what works, how the cart, payments, queues and refunds work, and its API</summary>
+
+### What works in Project 2
+
+**Cart**
+- Each line shows the product's photo, name, options, price and quantity. The totals update as you
+  add, remove or change quantities
+- The cart is saved on the server. A guest's cart is kept for 30 days; a logged-in shopper's cart
+  follows their account to any browser
+- Logging in moves the guest cart into the account's cart. If both have the same item, the bigger
+  quantity is kept (not the two added together)
+- The server sets every price and checks the stock. Adding more than is in stock says how many are
+  left; an item that sells out while in the cart is marked and left out of the total
+- "Goes with your order": suggestions in the cart from the same game, sensibly priced
+
+**Checkout**
+- One page with contact, address, shipping options, the card and an order summary where quantities
+  can still change or items be removed
+- Every field is checked, in the browser and again on the server, with a message that says how to
+  fix it
+- Logged-in shoppers get their name and email from the account, and their phone and address from
+  their last order
+- The address is checked: the postcode must have the right format for the country, and for the
+  biggest cities (Tallinn, Tartu, Riga, Vilnius, Helsinki and others) it must belong to the city
+- After paying, an order confirmation page and a confirmation email
+
+**Payments**
+- Card payments through Stripe's test mode. The card is typed into Stripe's own form, so card
+  details never reach this server. Stripe checks the card number, expiry date and CVC before paying
+- The order becomes *Payment successful* or *Payment failed* only when Stripe's server tells ours
+  (a signed webhook), never because the browser says so
+- A declined card (not enough money, wrong number, expired) says why, and the shopper can try
+  another card on the same order. If Stripe can't be reached, nothing is charged and the cart is kept
+- Stripe's messages go through a **message queue** (RabbitMQ) to the part of the server that updates
+  the order. A message that keeps failing is set aside in a *dead letter queue* instead of being lost
+- Emails for a paid order, a declined payment, a cancellation and a refund. They go through a queue of
+  their own, so a broken mail server never holds up a payment
+
+**Orders**
+- Placing an order reserves the stock straight away, so two people can never buy the last item
+  twice. An unpaid order holds its items for 30 minutes, then they go back on sale
+- The order keeps a copy of each item's name and price, so later price changes don't alter it
+- *Your orders* on the account page: filter by status and date, sort, and open any order for its
+  full details and status history
+- Cancelling an order before it is packed: the items go back on sale at once and Stripe refunds the
+  card. Once packing has started the server refuses (guests can cancel from their order page too)
+
+**Extras beyond the brief**
+- Refunds go all the way through Stripe, and are retried every minute if Stripe is down
+- An unpaid order releases its items by itself after 30 minutes, and cancels the payment at Stripe
+- If Stripe's message about a payment is lost, a job asks Stripe directly before releasing anything
+- Cards that need a bank security check (3-D Secure) work
+- The postcode is checked against the city, not just its format
+
+### How Project 2 works
+
+**The cart.** A guest's cart is found by a random token in a cookie JavaScript can't read; the
+database keeps only a hash of it. A logged-in shopper's cart belongs to their account. Prices are
+never stored in the cart: they are read from the products every time, so the cart can't show an old
+price.
+
+**Placing an order.** In one database transaction the server takes the stock for every item, copies
+the cart into the order, and empties those lines from the cart. Stock is taken with a single
+"take it only if there's enough" update, so when two people buy the last item at the same moment,
+exactly one succeeds and the other is told it sold out. If any item is short, the whole order is
+undone.
+
+**Paying (Stripe).** The server asks Stripe for a payment for the order's total. The browser shows
+Stripe's card form, which sends the card straight to Stripe, and Stripe tells our server the result
+by calling its webhook. The server checks that call's signature, so a fake "paid" message is
+rejected. If the webhook is lost, a job that runs every minute asks Stripe directly before releasing
+an unpaid order's items.
+
+**The message queue.** The webhook only checks the signature, puts the payment's result on a RabbitMQ
+queue and answers Stripe at once. A separate listener takes it off the queue and, in one database
+transaction, updates the order, its stock and its history. Each Stripe message is applied once, even
+if it arrives twice. If applying it fails, it is retried twice more; after that it is moved to a
+*dead letter queue*, where it waits to be looked at and moved back, instead of being lost or retried
+forever.
+
+**Emails.** Only after that transaction has saved does the server put "this order needs an email" on a
+second queue, so nobody gets an email about a change that didn't happen. A second listener writes the
+email from the order and sends it. If the mail server is down, the email is retried and then waits in
+its own dead letter queue, while payments carry on.
+
+**Cancelling and refunds.** A paid order can be cancelled until packing starts. In one transaction the
+order becomes *Cancelled* and its stock goes back on sale; then the server asks Stripe for the refund.
+When Stripe confirms it, the order becomes *Refunded*. If Stripe can't be reached, the order stays
+cancelled and a job asks Stripe again every minute. Each refund is sent with the order's own id as a
+key, so asking twice never refunds twice.
+
+### Trying Project 2 in the website
+
+| Try this | Where |
+|---|---|
+| Add to cart, change quantities, see suggestions | Any product page, then the cart in the header |
+| Ask for more than is in stock | A product page that says *Only N left*: raise its quantity in the cart past N, and the cart says how many are left |
+| Keep a cart as a guest, then log in | Add items logged out, then log in: they move into the account's cart |
+| Check out | The cart → **Checkout** (as a guest or logged in) |
+| See prefilled details | Log in, place one order, then start another: phone and address are filled in |
+| See the address check | Checkout with city `Tallinn` and postcode `50090` (a Tartu postcode) |
+| Pay, and see a declined card | Checkout with a [test card](#test-cards) |
+| The emails for paid, declined, cancelled, refunded | [MailHog](http://localhost:8025) |
+| Your orders, filters, sorting, order details | `/account/orders`, while logged in |
+| Cancel an order and get a refund | Open a paid order → **Cancel order**. Watch the product's stock go back up |
+
+After a declined card the order page offers **Try another card** for the same order. Payments and
+refunds show under **Payments** in the Stripe dashboard (test mode). Stripe's events as they arrive:
+`docker compose logs -f stripe-cli`.
+
+### Seeing the queues
+
+Open RabbitMQ at <http://localhost:15672> → **Queues**. `orders.payment-events` takes Stripe's results,
+`orders.emails` the emails, and each has a `.dlq` (dead letter queue) beside it.
+
+- **A bad message set aside:** open `orders.payment-events` → **Publish message**, type `not json` as
+  the payload, publish, and after a few seconds it appears in `orders.payment-events.dlq`.
+- **An email waiting out a mail server failure:** run `docker compose stop mailhog`, pay an order, and
+  the email lands in `orders.emails.dlq`. Run `docker compose start mailhog`, open that queue →
+  **Move messages** to `orders.emails`, and it arrives.
+
+### The API
+
+The website covers everything; these are the Project 2 endpoints behind it.
+
+| Endpoint | Does |
+|---|---|
+| `GET /cart`, `POST /cart/items`, `PUT/DELETE /cart/items/{productId}` | The cart (guests too, by cookie) |
+| `POST /cart/merge` | Move the guest cart into the account's (logged in) |
+| `POST /orders`, `GET /orders/{id}` | Place an order from the cart, read it (guests too) |
+| `POST /orders/{id}/payment` | Pay a declined order again with another card |
+| `POST /orders/{id}/cancel` | Cancel a paid order before packing, with a refund (guests too) |
+| `GET /orders?status=&from=&to=&sort=&page=` | Your orders, filtered and sorted (logged in) |
+| `GET /orders/last-delivery` | The phone and address of your last order, for the checkout (logged in) |
+| `POST /payments/webhook` | Where Stripe reports payments (checked by signature) |
+
+</details>
 
 ---
 
@@ -882,7 +872,7 @@ Project 1 is finished and everything in it still works. Its brief is in
 [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md).
 
 <details>
-<summary><b>Show Project 1</b>: what works, its database diagram, how login and search work, two-factor setup, Google keys, admin and API</summary>
+<summary><b>Show Project 1</b>: what works, how login and search work, two-factor setup, Google keys and API</summary>
 
 ### What works in Project 1
 
@@ -906,23 +896,9 @@ Project 1 is finished and everything in it still works. Its brief is in
 
 **Not built yet:** deleting your own review from the website (the API supports it).
 
-### Project 1 database
+### Where the product data comes from
 
-![Entity relationship diagram](docs/i-love-shopping-erd.png)
-
-| Table | Holds |
-|---|---|
-| `users` | Accounts: email, password hash, name, role, login provider, 2FA settings |
-| `categories` | The category tree; each category can have a parent |
-| `brands` | Product brands |
-| `products` | Name, description, price, stock, category, brand, weight and size in both unit systems, extra attributes, average rating |
-| `product_images` | Photos of a product, in display order |
-| `product_reviews` | A 1–5 star rating and text; one review per user per product |
-
-Login sessions (refresh tokens, logged-out tokens, pending 2FA) are kept in **Redis**, not in the
-database, and expire on their own.
-
-**Where the product data comes from.** The products are real listings from three chess, Go and
+The products are real listings from three chess, Go and
 backgammon suppliers. A few **Python scripts** in [tools/catalog-import](tools/catalog-import/README.md)
 download the suppliers' product pages and turn them into one SQL file, which the database loads on
 startup. The scripts are a one-off tool the developer runs by hand, not part of the shop, and the
@@ -1072,20 +1048,6 @@ Google** button on `/login`.
 
 If you'd rather skip this, the automated tests still cover both features (`CaptchaServiceTest`,
 `GoogleTokenVerifierTest`).
-
-### Becoming an admin
-
-There is no admin sign-up on purpose, and Admin can't be given from the website either: only from the
-server, so a stolen admin session can never make more admins. Create a normal account (with a password,
-not Google), then promote it:
-
-```sh
-docker compose exec postgres psql -U app -d iloveshopping \
-  -c "UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com'"
-```
-
-Sign in again. The admin pages ask you to turn on two-factor sign-in first (every staff member needs
-it). From there, the Users page gives the Support and Sales roles.
 
 ### Project 1 API
 

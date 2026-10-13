@@ -24,8 +24,8 @@ sign in, turn on two-factor when asked, and open `/admin`. The Users page gives 
 
 ### 1. The README has the overview, ERD, performance report, setup and usage guide
 
-Yes. [README.md](README.md): *What works*, *Database* (Mermaid ERDs for every project), *Setup*, *Usage guide*,
-and *Performance analysis report*.
+Yes. [README.md](README.md): *What works*, *Setup*, *The admin area* (how to get in and what to try on each
+page), *Usage guide*, *Database* (the whole schema as three ERDs), and *Performance analysis report*.
 
 ### 2. Star ratings, with the average from all reviews
 
