@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AdminOrderDetail, fetchAdminOrder } from '../../api/admin';
 import Icon from '../../components/Icon';
-import { formatPlaced, shippingName } from '../../components/OrderParts';
+import { formatPlaced } from '../../components/OrderParts';
 import { COUNTRIES } from '../../validation/checkoutRules';
 import { AdminHead, LoadState } from '../parts';
 
@@ -63,7 +63,7 @@ function Slip({ order: o }: { order: AdminOrderDetail }) {
         </div>
         <div>
           <p className="flb">Delivery</p>
-          <p>{shippingName(o.shippingMethod)}{o.tracking && <><br />{o.tracking.carrier} {o.tracking.number}</>}</p>
+          <p>{o.shippingName}{o.tracking && <><br />{o.tracking.carrier} {o.tracking.number}</>}</p>
         </div>
       </div>
       <table className="slip-items">

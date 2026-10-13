@@ -5,11 +5,11 @@ import { Link, useParams } from 'react-router-dom';
 import { addOrderNote, AdminOrderDetail, fetchAdminOrder, moveOrder, refundOrder } from '../../api/admin';
 import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
-import { formatPlaced, formatWhen, ReadOnlyLines, shippingName, StatusPill, Totals, Tracker } from '../../components/OrderParts';
+import { formatPlaced, formatWhen, orderDays, ReadOnlyLines, StatusPill, Totals, Tracker } from '../../components/OrderParts';
 import { formatPrice } from '../../lib/format';
-import { arrivalWindow, SHIPPING } from '../../lib/shipping';
+import { arrivalWindow } from '../../lib/shipping';
 import { COUNTRIES } from '../../validation/checkoutRules';
-import { AdminHead, LoadState } from '../parts';
+import { AdminHead, LoadState, useConfirm } from '../parts';
 
 const COURIERS = ['Omniva', 'DPD'];
 const CANCEL_REASONS = ['Customer asked by phone or email', "We can't fulfil it", 'Looks like fraud', 'Something else'];
@@ -51,7 +51,7 @@ export default function OrderPage() {
                 <div className="panel-h"><h2 id="it-h">Items</h2><span className="mute">Prices as paid</span></div>
                 <div className="panel-b">
                   <ReadOnlyLines lines={o.lines} />
-                  <Totals subtotal={o.subtotal} shipping={o.shippingCost} method={o.shippingMethod} vat={o.vat} total={o.total}
+                  <Totals subtotal={o.subtotal} shipping={o.shippingCost} methodName={o.shippingName} vat={o.vat} total={o.total}
                     grandLabel={o.payment ? 'Paid' : 'Total'} />
                 </div>
               </section>
@@ -102,10 +102,9 @@ export default function OrderPage() {
 const country = (code: string) => COUNTRIES.find((c) => c.code === code)?.name ?? code;
 
 function deliveryLine(o: AdminOrderDetail) {
-  const option = SHIPPING.find((s) => s.method === o.shippingMethod) ?? SHIPPING[0];
   const price = o.shippingCost === 0 ? 'free' : formatPrice(o.shippingCost);
-  const due = o.status === 'DELIVERED' || !o.payment ? null : `due ${arrivalWindow(option, new Date(o.placedAt))}`;
-  return [shippingName(o.shippingMethod), price, due].filter(Boolean).join(' · ');
+  const due = o.status === 'DELIVERED' || !o.payment ? null : `due ${arrivalWindow(orderDays(o), new Date(o.placedAt))}`;
+  return [o.shippingName, price, due].filter(Boolean).join(' · ');
 }
 
 /** The tracker with staff notes, and the next move the state machine allows. */
@@ -118,13 +117,12 @@ function MoveAlong({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: (o
     onSuccess: onSaved,
   });
   const at = (s: string) => o.timeline.find((t) => t.to === s)?.at;
-  const option = SHIPPING.find((s) => s.method === o.shippingMethod) ?? SHIPPING[0];
   const notes = [
     formatWhen(o.placedAt),
     at('PAYMENT_SUCCESSFUL') ? formatWhen(at('PAYMENT_SUCCESSFUL')!) : 'Waiting for Stripe',
     at('PROCESSING') ? formatWhen(at('PROCESSING')!) : o.next.includes('PROCESSING') ? 'Next' : '',
     at('SHIPPED') ? formatWhen(at('SHIPPED')!) : 'Needs tracking',
-    at('DELIVERED') ? formatWhen(at('DELIVERED')!) : `Due ${arrivalWindow(option, new Date(o.placedAt))}`,
+    at('DELIVERED') ? formatWhen(at('DELIVERED')!) : `Due ${arrivalWindow(orderDays(o), new Date(o.placedAt))}`,
   ];
   const canShip = o.next.includes('SHIPPED');
   const ship = (e: FormEvent) => {
@@ -136,13 +134,13 @@ function MoveAlong({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: (o
 
   return (
     <section className="apanel noprint" aria-labelledby="mv-h">
-      <div className="panel-h"><div><h2 id="mv-h">Move it along</h2><p>{steps.length ? 'Each step emails the customer.' : 'Nothing left to do by hand.'}</p></div></div>
+      <div className="panel-h"><div><h2 id="mv-h">Move it along</h2><p>{steps.length ? 'Shipping and delivery each email the customer.' : 'Nothing left to do by hand.'}</p></div></div>
       <div className="panel-b mvb">
         <Tracker order={o} notes={notes} />
         {o.next.includes('PROCESSING') && (
           <div className="msg msg--warn">
             <Icon name="alert" />
-            <p><b>Once packing starts, the customer can no longer cancel.</b> Until then they can, from their order page.</p>
+            <p><b>Once packing starts, the customer can no longer cancel.</b> Until then they can, from their order page. You can still cancel it here until it ships.</p>
           </div>
         )}
         {move.error && <p className="msg msg--bad" role="alert"><Icon name="alert" />{toApiError(move.error).message}</p>}
@@ -249,6 +247,7 @@ function Payment({ order: o }: { order: AdminOrderDetail }) {
 
 /** Before packing: the whole order is cancelled, the money goes back and the items return to stock. */
 function CancelPanel({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: (o: AdminOrderDetail) => void }) {
+  const [ask, confirmDialog] = useConfirm();
   const [reason, setReason] = useState(CANCEL_REASONS[0]);
   const cancel = useMutation({ mutationFn: () => moveOrder(o.id, 'CANCELLED', { note: reason }), onSuccess: onSaved });
   const items = `${o.itemCount} ${o.itemCount === 1 ? 'item' : 'items'}`;
@@ -265,16 +264,18 @@ function CancelPanel({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: 
         <Reason id="rr" value={reason} options={CANCEL_REASONS} onChange={setReason} />
         {cancel.error && <p className="err" role="alert"><Icon name="alert" width={2} />{toApiError(cancel.error).message}</p>}
         <button className="btn btn--line-danger foot-end" type="button" disabled={cancel.isPending}
-          onClick={() => confirm(`${label}? This can't be undone.`) && cancel.mutate()}>
+          onClick={async () => (await ask({ title: `${label}?`, body: <p>This can't be undone.</p>, action: label, danger: true })) && cancel.mutate()}>
           {cancel.isPending ? 'Working…' : label}
         </button>
       </div>
+      {confirmDialog}
     </section>
   );
 }
 
 /** After packing: refund by line, so each line's stock goes back, plus shipping when it should. */
 function RefundPanel({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: (o: AdminOrderDetail) => void }) {
+  const [ask, confirmDialog] = useConfirm();
   const left = (productId: string, quantity: number) => quantity - (o.refundedLines[productId] ?? 0);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [shipping, setShipping] = useState(false);
@@ -318,10 +319,11 @@ function RefundPanel({ order: o, onSaved }: { order: AdminOrderDetail; onSaved: 
         <Reason id="rfr" value={reason} options={REFUND_REASONS} onChange={setReason} />
         {refund.error && <p className="err" role="alert"><Icon name="alert" width={2} />{toApiError(refund.error).message}</p>}
         <button className="btn btn--line-danger foot-end" type="button" disabled={refund.isPending || amount === 0}
-          onClick={() => confirm(`Refund ${formatPrice(amount)}? This can't be undone.`) && refund.mutate()}>
+          onClick={async () => (await ask({ title: `Refund ${formatPrice(amount)}?`, body: <p>The money goes back to the customer's card through Stripe. This can't be undone.</p>, action: `Refund ${formatPrice(amount)}`, danger: true })) && refund.mutate()}>
           {refund.isPending ? 'Working…' : amount ? `Refund ${formatPrice(amount)}` : 'Pick what to refund'}
         </button>
       </div>
+      {confirmDialog}
     </section>
   );
 }

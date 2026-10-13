@@ -11,6 +11,7 @@ import com.iloveshopping.user.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,10 +23,12 @@ public class TwoFactorController {
 
     private final TwoFactorService twoFactorService;
     private final UserService userService;
+    private final AuthService authService;
 
-    public TwoFactorController(TwoFactorService twoFactorService, UserService userService) {
+    public TwoFactorController(TwoFactorService twoFactorService, UserService userService, AuthService authService) {
         this.twoFactorService = twoFactorService;
         this.userService = userService;
+        this.authService = authService;
     }
 
     @PostMapping("/setup")
@@ -35,11 +38,12 @@ public class TwoFactorController {
         return ResponseEntity.ok(twoFactorService.setup(user, request.password()));
     }
 
+    /** The refresh cookie is sent here too (its path is /auth), so the session it names is marked as well. */
     @PostMapping("/enable")
     public ResponseEntity<TwoFactorEnableResponse> enable(@AuthenticationPrincipal AuthPrincipal principal,
+                                                          @CookieValue(name = AuthController.REFRESH_COOKIE, required = false) String refreshToken,
                                                           @Valid @RequestBody TwoFactorEnableRequest request) {
-        User user = userService.getById(principal.userId());
-        return ResponseEntity.ok(new TwoFactorEnableResponse(twoFactorService.enable(user, request.code())));
+        return ResponseEntity.ok(authService.enableTwoFactor(principal.userId(), request.code(), refreshToken));
     }
 
     @PostMapping("/disable")

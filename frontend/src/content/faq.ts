@@ -1,6 +1,7 @@
-// The FAQ's questions and answers, by topic. Prices come from lib/shipping, so the answers can't drift from the checkout.
+// The FAQ's questions and answers, by topic. Delivery prices and days come from the server's options, so they can't drift from the checkout.
+import type { DeliverySettings } from '../api/delivery';
 import { formatPrice } from '../lib/format';
-import { FREE_SHIPPING_FROM, SHIPPING } from '../lib/shipping';
+import { daysText } from '../lib/shipping';
 
 export interface FaqTopic {
   id: string;
@@ -8,9 +9,28 @@ export interface FaqTopic {
   items: { q: string; a: string[] }[];
 }
 
-const [standard, express, locker] = SHIPPING;
+/** While the options load, the shipping answers say where to look rather than guess a price. */
+function shippingAnswers(delivery: DeliverySettings | undefined) {
+  if (!delivery || delivery.options.length === 0) {
+    return { cost: 'Each delivery option shows its price at checkout, before you pay.', time: 'Each option shows its delivery days at checkout.' };
+  }
+  const { freeShipping: free, options } = delivery;
+  const cost = options.map((o) => `${o.name} is ${formatPrice(o.price)}${o.freeOverLimit && free.on
+    ? `, and free when your order is ${formatPrice(free.from)} or more` : ''}.`).join(' ');
+  const time = options.map((o) => `${o.name}: ${daysText(o).toLowerCase()}.`).join(' ')
+    + ` Orders placed on a working day by ${options[0].orderBy} leave the same day.`;
+  return { cost, time };
+}
 
-export const FAQ: FaqTopic[] = [
+export function faqTopics(delivery?: DeliverySettings): FaqTopic[] {
+  const shipping = shippingAnswers(delivery);
+  return FAQ.map((t) => t.id !== 'shipping' ? t : {
+    ...t,
+    items: t.items.map((i, n) => (n === 0 ? { ...i, a: [shipping.cost, ...i.a.slice(1)] } : n === 1 ? { ...i, a: [shipping.time] } : i)),
+  });
+}
+
+const FAQ: FaqTopic[] = [
   {
     id: 'shipping',
     title: 'Shipping',
@@ -18,13 +38,13 @@ export const FAQ: FaqTopic[] = [
       {
         q: 'How much does shipping cost?',
         a: [
-          `Standard courier is ${formatPrice(standard.price)}, and free when your order is ${formatPrice(FREE_SHIPPING_FROM)} or more. Express courier is ${formatPrice(express.price)}. A parcel locker is ${formatPrice(locker.price)}.`,
+          '',
           'You see each price before you pay, and the total never changes after that.',
         ],
       },
       {
         q: 'How long does delivery take?',
-        a: [`Standard: ${standard.blurb}. Express: the next working day. Parcel locker: ${locker.blurb}. Orders placed on a working day by 15:00 leave the same day.`],
+        a: [''],
       },
       { q: 'Which countries do you deliver to?', a: ['Estonia, Latvia, Lithuania and Finland.'] },
       { q: 'How do I follow my parcel?', a: ['When it ships we email a tracking link. It is on your order page too.'] },

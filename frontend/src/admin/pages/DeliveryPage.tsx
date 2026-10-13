@@ -5,7 +5,7 @@ import { DeliveryOption, DeliverySettings, fetchDelivery, reorderDeliveryOptions
 import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
 import { formatPrice } from '../../lib/format';
-import { arrivalWindow, SHIPPING } from '../../lib/shipping';
+import { arrivalWindow } from '../../lib/shipping';
 import { COUNTRIES } from '../../validation/checkoutRules';
 import { AdminHead, Drawer, FieldError, invalid, LoadState } from '../parts';
 
@@ -22,7 +22,11 @@ export default function DeliveryPage() {
   const client = useQueryClient();
   const q = useQuery({ queryKey: KEY, queryFn: fetchDelivery, retry: false });
   const [editing, setEditing] = useState<DeliveryOption | 'new' | null>(null);
-  const put = (d: DeliverySettings) => client.setQueryData(KEY, d);
+  const put = (d: DeliverySettings) => {
+    client.setQueryData(KEY, d);
+    // the checkout's and the cart's copy of the options
+    client.invalidateQueries({ queryKey: ['delivery-options'] });
+  };
   const toggle = useMutation({ mutationFn: (o: DeliveryOption) => saveDeliveryOption({ ...o, active: !o.active }), onSuccess: put });
   const reorder = useMutation({
     mutationFn: (options: DeliveryOption[]) => reorderDeliveryOptions(options.map((o) => o.id)),
@@ -315,7 +319,7 @@ function OptionDrawer({ option, free, onClose, onSaved }: {
             <div className="opt" aria-hidden="true">
               <input type="radio" tabIndex={-1} readOnly />
               <b>{f.name.trim() || 'Name shoppers see'}</b>
-              <span className="d">{arrives(days[0], days[1])} · arrives {arrivalWindow({ ...SHIPPING[0], days })}</span>
+              <span className="d">{arrives(days[0], days[1])} · arrives {arrivalWindow({ daysMin: days[0], daysMax: days[1], orderBy: TIME.test(f.orderBy) ? f.orderBy : undefined })}</span>
               <span className="p">{MONEY.test(f.price.trim()) ? formatPrice(money(f.price)) : '€–'}</span>
             </div>
           </div>

@@ -42,12 +42,13 @@ class ReviewIT extends CatalogTestSupport {
 
     @Test
     void postingReviews_updatesTheAverage_andASecondReviewBySameUserConflicts() throws Exception {
-        String alice = customerToken();
-        String bob = customerToken();
+        String alice = buyerOf(productId);
+        String bob = buyerOf(productId);
 
         mockMvc.perform(json(post("/products/{id}/reviews", productId), alice, review(5)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.verifiedPurchase").value(false));
+                .andExpect(jsonPath("$.verifiedPurchase").value(true))
+                .andExpect(jsonPath("$.authorName").value("Catalog T."));
         mockMvc.perform(json(post("/products/{id}/reviews", productId), bob, review(2)))
                 .andExpect(status().isCreated());
 
@@ -71,14 +72,18 @@ class ReviewIT extends CatalogTestSupport {
         mockMvc.perform(json(post("/products/{id}/reviews", productId), customerToken(), review(6)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fields.rating").exists());
+        // only a delivered purchase may be reviewed
+        mockMvc.perform(json(post("/products/{id}/reviews", productId), customerToken(), review(4)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("review_needs_delivery"));
         mockMvc.perform(json(post("/products/{id}/reviews", UUID.randomUUID()), customerToken(), review(4)))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void onlyTheAuthorOrAnAdmin_canDeleteAReview() throws Exception {
-        String author = customerToken();
-        String stranger = customerToken();
+        String author = buyerOf(productId);
+        String stranger = buyerOf(productId);
         String reviewId = JsonPath.read(mockMvc.perform(json(post("/products/{id}/reviews", productId), author, review(4)))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id");
 
@@ -107,8 +112,8 @@ class ReviewIT extends CatalogTestSupport {
     @Test
     void concurrentReviews_onOneProduct_bothCountTowardsTheAverage() throws Exception {
         UUID product = UUID.fromString(productId);
-        UUID userA = UUID.fromString(jdbc.queryForObject("SELECT id::text FROM users WHERE email = ?", String.class, registerUser()));
-        UUID userB = UUID.fromString(jdbc.queryForObject("SELECT id::text FROM users WHERE email = ?", String.class, registerUser()));
+        UUID userA = UUID.fromString(jdbc.queryForObject("SELECT id::text FROM users WHERE email_hash = ?", String.class, emailHash(registerUser())));
+        UUID userB = UUID.fromString(jdbc.queryForObject("SELECT id::text FROM users WHERE email_hash = ?", String.class, emailHash(registerUser())));
 
         try (Connection first = dataSource.getConnection()) {
             first.setAutoCommit(false);

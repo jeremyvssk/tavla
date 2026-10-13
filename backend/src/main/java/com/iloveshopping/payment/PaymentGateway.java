@@ -53,6 +53,12 @@ public interface PaymentGateway {
      */
     RefundStatus refund(String intentId, UUID orderId);
 
+    /**
+     * Gives part of a payment back: {@code amountCents} of it. Idempotent per refund: asking twice for the same
+     * {@code refundId} refunds once, so a retry after a timeout can't give the money back twice.
+     */
+    RefundStatus refundPart(String intentId, UUID refundId, long amountCents);
+
     /** The order a payment was made for, from what {@link #create} stored with it; null when it isn't one of ours. */
     UUID orderIdOf(String intentId);
 }

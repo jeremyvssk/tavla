@@ -17,9 +17,10 @@ import java.util.Date;
 import java.util.UUID;
 
 /**
- * Issues access tokens carrying only identity claims (sub, role, iat, exp, jti) —
- * no PII in the payload. Validation is pure signature + expiry math; the token is
- * never stored. A separate JTI blocklist check (TokenStoreService) handles revocation.
+ * Issues access tokens carrying only identity claims (sub, role, iat, exp, jti, and mfa when the
+ * session passed a second factor) — no PII in the payload. Validation is pure signature + expiry
+ * math; the token is never stored. TokenStoreService's revocation check (the JTI blocklist and the
+ * per-user cut-off a role change sets) is the one lookup on top.
  */
 @Service
 public class JwtService {
@@ -33,11 +34,16 @@ public class JwtService {
         this.accessTokenTtl = Duration.parse(accessTokenTtl);
     }
 
-    public String generateAccessToken(UUID userId, Role role) {
+    /**
+     * {@code mfa} says this session passed a second factor: a TOTP or backup code at sign-in, or the
+     * code that switched 2FA on. Staff endpoints refuse a token without it (StaffArea).
+     */
+    public String generateAccessToken(UUID userId, Role role, boolean mfa) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(userId.toString())
                 .claim("role", role.name())
+                .claim("mfa", mfa ? Boolean.TRUE : null)
                 .id(UUID.randomUUID().toString())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plus(accessTokenTtl)))

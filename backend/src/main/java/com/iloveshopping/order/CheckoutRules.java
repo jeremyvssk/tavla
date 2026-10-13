@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * so it can catch a mistake without refusing a real address; any other city gets the format check only.
  * Matching a street to its postcode would need a postal lookup service, which this project doesn't use.
  */
-final class CheckoutRules {
+public final class CheckoutRules {
 
     private record Postcode(Pattern pattern, String message) {
     }
@@ -58,22 +58,36 @@ final class CheckoutRules {
     }
 
     static void check(PlaceOrderRequest request) {
-        Map<String, String> problems = new LinkedHashMap<>();
-        Postcode postcode = POSTCODES.get(request.country());
-        if (postcode != null && !postcode.pattern().matcher(request.postcode().strip()).matches()) {
-            problems.put("postcode", postcode.message());
-        } else {
-            String cityProblem = cityMismatch(request.country(), request.city(), request.postcode());
-            if (cityProblem != null) {
-                problems.put("postcode", cityProblem);
-            }
-        }
-        if (request.phone().replaceAll("\\D", "").length() < 8) {
-            problems.put("phone", "Enter the full number with the country code, like +372 5123 4567.");
+        Map<String, String> problems = addressProblems(request.country(), request.postcode(), request.city(), request.phone());
+        PlaceOrderRequest.BillingAddress bill = request.billingAddress();
+        if (bill != null) {
+            addressProblems(bill.country(), bill.postcode(), bill.city(), null)
+                    .forEach((field, problem) -> problems.put("billingAddress." + field, problem));
         }
         if (!problems.isEmpty()) {
             throw new OrderValidationException(problems);
         }
+    }
+
+    /**
+     * The same checks for an address saved on the account (user/AddressService), so a saved address always
+     * passes at checkout. Keys are the field names: postcode, phone. Empty when all is well.
+     */
+    public static Map<String, String> addressProblems(String country, String postcode, String city, String phone) {
+        Map<String, String> problems = new LinkedHashMap<>();
+        Postcode rule = POSTCODES.get(country);
+        if (rule != null && !rule.pattern().matcher(postcode.strip()).matches()) {
+            problems.put("postcode", rule.message());
+        } else {
+            String cityProblem = cityMismatch(country, city, postcode);
+            if (cityProblem != null) {
+                problems.put("postcode", cityProblem);
+            }
+        }
+        if (phone != null && phone.replaceAll("\\D", "").length() < 8) {
+            problems.put("phone", "Enter the full number with the country code, like +372 5123 4567.");
+        }
+        return problems;
     }
 
     /** A message when the city is one of {@link #CITIES} and the postcode can't be in it; else null. */

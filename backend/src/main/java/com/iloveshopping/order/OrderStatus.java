@@ -33,11 +33,14 @@ public enum OrderStatus {
                 PENDING_PAYMENT, Set.of(OrderActor.SHOPPER),
                 PAYMENT_SUCCESSFUL, Set.of(OrderActor.STRIPE),
                 CANCELLED, Set.of(OrderActor.TIMER)));
-        // Cancelling stops here: once packing starts (Processing) the parcel is on its way.
+        // The shopper can cancel until packing starts. Staff can still cancel while it is being packed (Processing),
+        // before it leaves; after that the way back is a refund, not a cancellation.
         MOVES.put(PAYMENT_SUCCESSFUL, Map.of(
                 PROCESSING, Set.of(OrderActor.ADMIN),
                 CANCELLED, Set.of(OrderActor.SHOPPER, OrderActor.ADMIN)));
-        MOVES.put(PROCESSING, Map.of(SHIPPED, Set.of(OrderActor.ADMIN)));
+        MOVES.put(PROCESSING, Map.of(
+                SHIPPED, Set.of(OrderActor.ADMIN),
+                CANCELLED, Set.of(OrderActor.ADMIN)));
         MOVES.put(SHIPPED, Map.of(DELIVERED, Set.of(OrderActor.ADMIN)));
         // A cancelled order that was paid becomes Refunded when Stripe confirms the refund (step 7).
         MOVES.put(CANCELLED, Map.of(REFUNDED, Set.of(OrderActor.STRIPE)));

@@ -12,13 +12,17 @@ import ProductCard from '../components/ProductCard';
 import { useCart, useCartActions, useRecommendations } from '../hooks/useCart';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { formatPrice } from '../lib/format';
-import { FREE_SHIPPING_FROM, VAT_RATE } from '../lib/shipping';
+import { useDelivery } from '../hooks/useDelivery';
+import { toFreeShipping, VAT_RATE } from '../lib/shipping';
 import { useAppSelector } from '../store';
+import { PAGE_META } from '../content/pageMeta';
+import { productPath } from '../lib/paths';
 
 export default function CartPage() {
-  usePageMeta('Your cart', 'The chess, Go and backgammon equipment in your Tavla cart: quantities, prices and the total before shipping.');
+  usePageMeta(...PAGE_META.cart);
   const signedIn = useAppSelector((s) => s.auth.status === 'authenticated');
   const { cart, isPending, isError, refetch } = useCart();
+  const { data: delivery } = useDelivery();
   const { setQuantity, remove } = useCartActions();
   const recs = useRecommendations(cart.lines.length > 0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -44,7 +48,7 @@ export default function CartPage() {
   }
   if (cart.lines.length === 0) return <EmptyCart signedIn={signedIn} />;
 
-  const toFree = Math.max(0, FREE_SHIPPING_FROM - cart.subtotal);
+  const free = toFreeShipping(delivery, cart.subtotal);
   const counted = cart.lines.reduce((n, l) => n + l.countedQuantity, 0);
   // prices include VAT: this is the share of the items' total that is VAT, in cents so it rounds once
   const vat = Math.round((cart.subtotal * 100 * VAT_RATE) / (1 + VAT_RATE)) / 100;
@@ -56,15 +60,17 @@ export default function CartPage() {
         <h1 className="dt">Your cart <span className="mute num">{cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}</span></h1>
         <Link className="t-go" to="/catalog"><Icon name="left" width={2.2} />Continue shopping</Link>
       </div>
-      <div className="shipline" role="status">
-        <p>
-          <Icon name="truck" />
-          {toFree > 0
-            ? <span>Add <b>{formatPrice(toFree)}</b> more and your order ships free with Standard courier.</span>
-            : <span>Your order ships <b>free</b> with Standard courier.</span>}
-        </p>
-        <span className="bar2" aria-hidden="true"><i style={{ width: `${Math.min(100, (cart.subtotal / FREE_SHIPPING_FROM) * 100)}%` }} /></span>
-      </div>
+      {free && (
+        <div className="shipline" role="status">
+          <p>
+            <Icon name="truck" />
+            {free.left > 0
+              ? <span>Add <b>{formatPrice(free.left)}</b> more and your order ships free.</span>
+              : <span>Your order ships <b>free</b>.</span>}
+          </p>
+          <span className="bar2" aria-hidden="true"><i style={{ width: `${free.from ? Math.min(100, (cart.subtotal / free.from) * 100) : 100}%` }} /></span>
+        </div>
+      )}
       <section aria-labelledby="items-h">
         <h2 id="items-h" className="vh">Items</h2>
         <div aria-live="polite">{problem && <p className="msg msg--bad cart-problem"><Icon name="info" />{problem}</p>}</div>
@@ -84,7 +90,7 @@ export default function CartPage() {
             <div><dt>Items ({counted})</dt><dd>{formatPrice(cart.subtotal)}</dd></div>
             <div>
               <dt>Shipping</dt>
-              {toFree > 0 ? <dd className="ship-later">You pick it at checkout</dd> : <dd className="free">Free · you pick at checkout</dd>}
+              {free && free.left === 0 ? <dd className="free">Free · you pick at checkout</dd> : <dd className="ship-later">You pick it at checkout</dd>}
             </div>
             <div className="grand"><dt>Total <small>before shipping</small></dt><dd>{formatPrice(cart.subtotal)}</dd></div>
             <div className="vat"><dt>Includes VAT 24%</dt><dd>{formatPrice(vat)}</dd></div>
@@ -113,7 +119,7 @@ export default function CartPage() {
 
 function Line({ line: l, onQuantity, onRemove }: { line: CartLine; onQuantity: (q: number) => void; onRemove: () => void }) {
   const gone = l.state === 'sold_out' || l.state === 'unavailable';
-  const to = `/catalog/${l.productId}`;
+  const to = productPath({ id: l.productId, name: l.name });
   return (
     <li className={gone ? 'cl gone' : 'cl'}>
       <div className="prod">

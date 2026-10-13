@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -28,7 +29,12 @@ class SearchIT extends CatalogTestSupport {
     void buildCatalog() throws Exception {
         admin = adminToken();
         String s = suffix();
-        token = "quxbar" + s.replaceAll("[^a-z]", "");
+        // Digits become letters (0 -> g ... 9 -> p) rather than being dropped: dropping them left a hex suffix
+        // only a letter or two, and two tests sharing a word saw each other's products.
+        StringBuilder word = new StringBuilder("quxbar");
+        s.chars().filter(Character::isLetterOrDigit)
+                .forEach(c -> word.append(Character.isDigit(c) ? (char) ('g' + c - '0') : (char) c));
+        token = word.toString();
         categorySlug = "search-it-" + s;
         int category = createCategory(admin, "Search IT " + s, categorySlug, null);
         brandA = "brand-a-" + s;
@@ -119,6 +125,21 @@ class SearchIT extends CatalogTestSupport {
         mockMvc.perform(get("/search/suggestions").param("q", "w"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", empty()));
+    }
+
+    @Test
+    void twoLetterSuggestions_areKeptBriefly_inAnyCase_whileLongerOnesAreAlwaysFresh() throws Exception {
+        // Two letters can't use the trigram index, so their answers are kept for 30 seconds (the load test's fix).
+        mockMvc.perform(get("/search/suggestions").param("q", "jq")).andExpect(status().isOk());
+        createProduct(admin, "Jqx " + token, "A new product.", "10.00",
+                createCategory(admin, "Suggest IT " + token, "suggest-it-" + token, null), null);
+
+        mockMvc.perform(get("/search/suggestions").param("q", "JQ"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", not(hasItem("Jqx " + token))));
+        mockMvc.perform(get("/search/suggestions").param("q", "jqx"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].name", hasItem("Jqx " + token)));
     }
 
     @Test

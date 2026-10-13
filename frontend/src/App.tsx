@@ -49,7 +49,7 @@ export default function App() {
         <Route index element={<HomePage />} />
         {/* Not /products: nginx sends that path to the backend, so a reload there would show JSON. */}
         <Route path="catalog" element={<CatalogPage />} />
-        <Route path="catalog/:id" element={<ProductPage />} />
+        <Route path="catalog/:id/:slug?" element={<ProductPage />} />
         <Route path="login" element={<LoginPage />} />
         <Route path="register" element={<RegisterPage />} />
         <Route path="forgot" element={<ForgotPasswordPage />} />

@@ -1,17 +1,19 @@
 // FAQ: questions by topic with a contents column, and a search that narrows them as you type.
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FAQ } from '../content/faq';
+import { useDelivery } from '../hooks/useDelivery';
+import { faqTopics } from '../content/faq';
 import Icon from '../components/Icon';
 import { useActiveSection } from '../hooks/useActiveSection';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 export default function FaqPage() {
-  usePageMeta('Shipping, payment and returns FAQ',
-    'Answers on shipping prices and times, card payments, returns and refunds, cancelling an order, and your Tavla account. Free shipping on orders over €100.');
+  usePageMeta(...PAGE_META.faq);
   const [query, setQuery] = useState('');
   const q = query.trim().toLowerCase();
-  const topics = FAQ.map((t) => ({
+  const { data: delivery } = useDelivery();
+  const topics = faqTopics(delivery).map((t) => ({
     ...t,
     items: q ? t.items.filter((i) => `${i.q} ${i.a.join(' ')}`.toLowerCase().includes(q)) : t.items,
   })).filter((t) => t.items.length > 0);

@@ -3,8 +3,10 @@
 B2C e-commerce platform. Demo catalog: ~1,770 real chess, Go and backgammon products imported from
 three suppliers by the Python scripts in `tools/catalog-import` (a dev-only tool; the generated SQL
 seed is committed, so Docker stays the only prerequisite). School project in 3 parts.
-**Current scope: Project 2** — cart, checkout, Stripe payments, orders. Project 1 (auth, database,
-product catalog) is done.
+**Current scope: Project 3** — the staff area (roles, 2FA for staff, audit log, catalog and order
+management, delivery options, bulk upload, review moderation), reviews with helpful votes, the shopper's
+account and addresses, and the contact form. Projects 1 (auth, database, catalog) and 2 (cart, checkout,
+Stripe payments, orders) are done. P3 build steps and their status: [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md).
 
 The assignment brief and its review checklist are in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md).
 [README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
@@ -79,7 +81,7 @@ coming back to ask whether it worked.
 | Backend | Spring Boot 4.0.6, Java 21 (**Boot 4, not 3** — see [backend/CLAUDE.md](backend/CLAUDE.md)) |
 | ORM + migrations | Spring Data JPA + Flyway (plain SQL files, run on startup) |
 | Database | PostgreSQL 16 (ACID, JSONB, built-in full-text search) |
-| Token store | Redis 7 (refresh tokens, access token blocklist) |
+| Token store | Redis 7 (refresh tokens, access token blocklist and per-user cut-off) |
 | Message queue | RabbitMQ 4: Stripe's payment events and the order emails, each with a dead letter queue |
 | Email (dev) | MailHog in docker-compose |
 | Containers | Docker + docker-compose (one-command startup) |
@@ -92,7 +94,7 @@ Modular monolith — single Spring Boot app, code split by domain not layer.
 Each domain owns its own controller/service/repository/entity.
 Cross-domain calls through service interfaces only (no repo-to-repo).
 
-Domains: `user`, `auth`, `catalog` (P1), `cart`, `order`, `payment` (P2)
+Domains: `user`, `auth`, `catalog` (P1), `cart`, `order`, `payment` (P2), `audit`, `delivery`, `overview`, `support` (P3)
 
 ## Folder Structure
 
@@ -136,9 +138,11 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
 
 ## Database Schema (Flyway migrations)
 
-**users** — id UUID, email unique, password_hash, full_name, avatar_url,
-  auth_provider (LOCAL/GOOGLE/FACEBOOK), oauth_provider_id, role (CUSTOMER/ADMIN),
-  two_factor_enabled, two_factor_secret, two_factor_backup_codes,
+**users** — id UUID, email (encrypted), email_hash unique (blind index: HMAC-SHA256 of the lower-cased email,
+  `crypto/BlindIndex`; every lookup by email goes through it), password_hash, full_name (encrypted), avatar_url (encrypted),
+  auth_provider (LOCAL/GOOGLE/FACEBOOK), oauth_provider_id, role (CUSTOMER/SUPPORT/SALES/ADMIN), phone (encrypted),
+  last_sign_in_at,
+  two_factor_enabled, two_factor_secret (encrypted), two_factor_backup_codes,
   email_verified, created_at, updated_at
 
 **categories** — id, name, slug unique, parent_id (self-FK for hierarchy), active
@@ -165,10 +169,12 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
 **cart_items** — cart_id FK, product_id FK, quantity INT (1-10), added_at; PK (cart_id, product_id).
   No price: read from products on every cart read
 
-**orders** — id UUID, number unique (TV-10001), user_id FK or guest_token_hash (exactly one), status
+**orders** — id UUID, number unique (TV-10001), user_id FK (SET NULL when the account is deleted) or guest_token_hash
+  (at most one), status
   (state machine in [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md)), contact + address
-  (encrypted), shipping_method, subtotal/shipping_cost/vat/total NUMERIC(10,2), hold_until, placed_at,
-  status_changed_at
+  (encrypted), shipping_method (FK delivery_options) + a copy of its name and days, billing_* (encrypted, null =
+  delivery address), carrier, tracking_number (encrypted), subtotal/shipping_cost/vat/total NUMERIC(10,2),
+  hold_until, placed_at, status_changed_at
 
 **order_items** — order_id FK, product_id FK (SET NULL), position, snapshot of name/options/image (encrypted)
   and unit_price, quantity, line_total
@@ -178,6 +184,11 @@ When working under `backend/`, also follow [backend/CLAUDE.md](backend/CLAUDE.md
 **payments** — order_id FK unique, provider_payment_id (Stripe PaymentIntent), amount, currency,
   status (STARTED/SUCCEEDED/FAILED/CANCELED/REFUND_DUE/REFUNDING/REFUNDED), card_brand, card_last4,
   failure_code. Never card numbers
+
+**P3 tables** (V11–V16; V16 encrypts users' personal columns, and `UserEncryptionBackfill` encrypts plain rows after every migrate): **audit_log** (append-only by trigger, 12 months), **import_jobs**, **delivery_options**,
+**shop_settings** (one row: free-shipping limit), **order_notes**, **refunds** + **refund_lines** (part refunds),
+**review_votes**, **review_reports**, **user_addresses** (encrypted). products gain sku (unique ignoring case) and
+archived_at; categories position; product_reviews status (NEW/LIVE/REPORTED/HIDDEN), hidden_reason, helpful_count.
 
 *Encrypted columns* (V10): AES-256-GCM via the `Encrypted` JPA converter (`crypto/`), key in
 `APP_ENCRYPTION_KEY`, stored as `v1:` + base64. Native SQL bypasses the converter, so code writing these
@@ -192,9 +203,12 @@ columns natively encrypts with `FieldCipher` itself. Never filter, sort or join 
 - `refresh_tokens_user:{userId}` → Set of hashes (for "revoke all on password reset")
 - `used_refresh_token:{hash}` → user_id, TTL 7 days (reuse detection: a replay revokes all)
 - `token_blocklist:{jti}` → "1", TTL = remaining access token lifetime
+- `tokens_revoked_before:{userId}` → epoch second; every access token issued at or before it is refused (role change,
+  account deleted). TTL = access token lifetime
+- `rate_bucket:step_up:{userId}` → bucket of 5 2FA codes or passwords typed to approve a change (role change, account deletion), refilled over 15 min
 - `2fa_pending:{challengeHash}` / `2fa_attempts:{challengeHash}` → user_id / counter, TTL 5 min
 - `pwreset:{hash}` → user_id, TTL 15 min
-- `rate_limit:{ip:…|login:…|reset_email:…}` → fixed-window counters
+- `rate_bucket:{ip:…|login:…|reset_email:…}` → token buckets (hash: tokens, at), one Lua script, Redis TIME
 
 **Image storage:** local filesystem, mounted as Docker volume `product_images_data`.
 Served via nginx at `/images/**`. Not suitable for production scale — use S3 later.
@@ -219,6 +233,6 @@ See [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md)
 
 ## Open Questions / Known Gaps
 
-- Image CDN strategy for production (currently: Docker volume + nginx)
+- Image CDN for production: uploads are already 160/600/1200 px with immutable caching; a CDN needs an S3 `StorageService`
 - GDPR data export format (JSON dump of user record + orders)
 - Elasticsearch for P3 — SearchService interface is already the abstraction point

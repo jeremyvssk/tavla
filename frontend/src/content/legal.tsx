@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { formatPrice } from '../lib/format';
-import { FREE_SHIPPING_FROM } from '../lib/shipping';
+import { useDelivery } from '../hooks/useDelivery';
 
 export interface LegalDoc {
   slug: 'terms' | 'privacy' | 'cookies';
@@ -10,6 +10,14 @@ export interface LegalDoc {
   title: string;
   description: string;
   sections: { id: string; title: string; body: ReactNode }[];
+}
+
+/** The free-shipping sentence, from the limit staff set; nothing while it loads or when it is off. */
+function FreeShipping() {
+  const { data } = useDelivery();
+  const free = data?.options.filter((o) => o.freeOverLimit) ?? [];
+  if (!data?.freeShipping.on || free.length === 0) return null;
+  return <>{free.map((o) => o.name).join(', ')} {free.length === 1 ? 'is' : 'are'} free on orders of {formatPrice(data.freeShipping.from)} or more. </>;
 }
 
 const COOKIES = (
@@ -27,11 +35,11 @@ export const LEGAL: LegalDoc[] = [
     slug: 'terms',
     tab: 'Terms of sale',
     title: 'Terms of sale',
-    description: 'The terms for buying from Tavla: prices and VAT, payment by card, delivery in the Baltics and Finland, cancelling before packing, and 30-day returns.',
+    description: 'The terms for buying from Tavla: prices and VAT, payment by card, delivery in the Baltics and Finland, cancelling before it is packed, and our 30-day returns.',
     sections: [
       { id: 'seller', title: 'Who sells to you', body: <p>Tavla is run by [company name], registry code [code], [address], Estonia. These terms apply to every order placed on this site.</p> },
       { id: 'prices', title: 'Prices and payment', body: <><p>Prices are in euros and include Estonian VAT (24%). The total you see before you press Pay is the total charged.</p><p>You pay by card through Stripe. Your card is charged when you press Pay.</p></> },
-      { id: 'delivery', title: 'Delivery', body: <p>We deliver to Estonia, Latvia, Lithuania and Finland. Standard courier is free on orders of {formatPrice(FREE_SHIPPING_FROM)} or more. Delivery times are estimates from the day the parcel leaves us.</p> },
+      { id: 'delivery', title: 'Delivery', body: <p>We deliver to Estonia, Latvia, Lithuania and Finland. <FreeShipping />Delivery times are estimates from the day the parcel leaves us.</p> },
       { id: 'cancel', title: 'Cancelling an order', body: <p>You can cancel an order from its page until we start packing it. The full amount goes back to your card.</p> },
       { id: 'returns', title: 'Returns', body: <p>You can return anything within 30 days of delivery, unused and in its box. We refund the price of what you return once the parcel reaches us. [Your return postage rule]</p> },
       { id: 'faults', title: 'Faulty or damaged goods', body: <p>If something arrives damaged or stops working because of a fault, <Link className="lnk" to="/contact">write to us</Link> with your order number and a photo. You have the rights the Estonian Law of Obligations Act gives a consumer for two years after delivery.</p> },
@@ -41,7 +49,7 @@ export const LEGAL: LegalDoc[] = [
     slug: 'privacy',
     tab: 'Privacy policy',
     title: 'Privacy policy',
-    description: 'What personal data Tavla keeps and why, what it never keeps, how it is encrypted and protected, who else sees it, and how to download or delete yours.',
+    description: 'What personal data Tavla keeps and why, what it never keeps, how it is encrypted and protected, who else gets to see it, and how to download or delete yours.',
     sections: [
       { id: 'who', title: 'Who we are', body: <p>Tavla is run by [company name], registry code [code], [address], Estonia. For anything about your data, write to [privacy email].</p> },
       {
@@ -83,7 +91,7 @@ export const LEGAL: LegalDoc[] = [
     slug: 'cookies',
     tab: 'Cookies',
     title: 'Cookies',
-    description: 'Tavla uses two cookies, both needed for the shop to work: one keeps a guest cart for 30 days, one keeps you signed in. No tracking or advertising cookies.',
+    description: 'Tavla uses just two cookies, both needed for the shop to work: one keeps a guest cart for 30 days, one keeps you signed in. No tracking or advertising cookies.',
     sections: [
       { id: 'which', title: 'Which cookies we set', body: COOKIES },
       { id: 'none', title: 'What we don\'t use', body: <p>No analytics, advertising or social media cookies, so there is nothing to accept or refuse.</p> },

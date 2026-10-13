@@ -1,4 +1,6 @@
-# Review Answers — Project 2
+# Review Answers
+
+Project 3's answers come first; Project 2's follow, unchanged.
 
 Start the app: `./start.sh` → shop at <https://localhost:5443> (accept the self-signed certificate once;
 <http://localhost:5173> redirects there), emails at <http://localhost:8025> (MailHog), queues at
@@ -9,13 +11,253 @@ Run the tests:
 - Backend: `cd backend && mvn verify` (Docker must be running: the tests start PostgreSQL, Redis and RabbitMQ)
 - Frontend: `cd frontend && bunx vitest run`
 
-**Latest run (2026-10-08): 391 tests, all passing** — 171 backend unit, 145 backend integration +
-security, 75 frontend.
+**Latest run (2026-10-12): 576 tests, all passing** — 203 backend unit, 241 backend integration and security, 132 frontend.
 
-Backend paths below are short for `backend/src/main/java/com/iloveshopping/…`. The order statuses
-and every allowed move are in [claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md).
+Backend paths below are short for `backend/src/main/java/com/iloveshopping/…`.
 
 ---
+
+## Project 3
+
+To try the staff area: make an account an admin ([README → Becoming an admin](README.md#becoming-an-admin)),
+sign in, turn on two-factor when asked, and open `/admin`. The Users page gives other accounts Support or Sales.
+
+### 1. The README has the overview, ERD, performance report, setup and usage guide
+
+Yes. [README.md](README.md): *What works*, *Database* (Mermaid ERDs for every project), *Setup*, *Usage guide*,
+and *Performance analysis report*.
+
+### 2. Star ratings, with the average from all reviews
+
+Each review has 1–5 stars. The product's average and review count are kept up to date by the database (a
+trigger), so they're always right, even when two reviews arrive at once. Hidden reviews don't count.
+Tests: `ReviewIT`, `ReviewModerationIT`.
+
+### 3. Text reviews, only for products the user bought
+
+Only an account whose order with that product was **delivered** can review it (`catalog/PurchaseHistory`).
+Anyone else gets `403`. Tests: `ReviewIT`, `ReviewServiceTest`.
+
+### 4. Reviews sorted by helpful votes
+
+"Most helpful" is the default sort. One vote per shopper (`review_votes`), and the count goes up inside the
+database, so votes at the same moment all count. Test: `ReviewModerationIT.manyVotesAtOnceAllCount`.
+
+### 5. 2FA is enforced for every admin account
+
+A staff account signed in with only a password can reach nothing but the 2FA setup page (`403
+two_factor_required`). Staff can't turn 2FA off. Code: `auth/StaffArea.java`. Tests: `StaffAccessIT`
+(`staffSignedInWithAPasswordOnly_canReachOnlyTheTwoFactorSetup`, `aStaffAccountCantTurnTwoFactorOff`).
+
+### 6. Product CRUD with all required fields
+
+`/admin/products`: add, edit, hide, delete. Every field: name, description, price, stock, SKU, category, brand,
+photos, weight and size (metric, imperial worked out from it), specs and variants. A product that was ever
+ordered is archived instead of deleted, so old orders stay whole. Tests: `ProductAdminIT`, `StaffCatalogIT`,
+`ProductRequestValidationTest`.
+
+### 7. Admins manage products, categories, orders and refunds
+
+- Products: the list above, plus bulk show/hide/move/price change and CSV export.
+- Categories: add, edit, move, drag to reorder, delete only when empty. Test: `CategoryAdminIT`.
+- Orders: a work queue, then Processing → Shipped (with tracking number) → Delivered, cancel, notes. Test: `StaffOrderIT`.
+- Refunds: whole or part (chosen by line), sent to Stripe. Test: `StaffOrderIT`.
+
+### 8. Admins manage delivery options and order status updates
+
+`/admin/delivery`: add, edit, reorder and switch off delivery options, and set the free-shipping limit. Checkout
+reads them from the database. Status updates are on each order's page, and the shopper gets an email for each.
+An order can only move along allowed steps ([claude-docs/ORDER_STATES.md](claude-docs/ORDER_STATES.md)).
+Tests: `DeliveryIT`, `DeliveryOptionTest`, `StaffOrderIT`.
+
+### 9. Admins view all users and assign roles
+
+`/admin/users`: everyone with an account, searchable by email. A role change (Customer, Support, Sales) needs the
+admin's own 2FA code and logs the person out at once so the new role applies. Admin itself is only given from the
+server's command line, so a stolen admin session can't create more admins. Test: `StaffUserIT`.
+
+**Least privilege:** Support handles orders and reviews, Sales the catalog and delivery, Admin everything. Sales
+can change a price by at most ±50% at a time; Support can refund at most €100 per order. One table holds the
+rules: `auth/StaffArea.java`. **Audit log:** every staff change and sign-in is recorded (who, what, before and
+after) and the database refuses any edit or delete for 12 months (`/admin/audit`). Tests: `StaffAccessIT`, `AuditLogIT`.
+
+### 10. Bulk upload products from JSON or CSV
+
+`/admin/import`: upload a file, see every problem row by row, then import all rows or none. Nothing changes
+until you confirm. Example files: `docs/examples/products-good.csv`, `products-bad.csv`, `products.json`.
+Code: `catalog/imports/`. Tests: `ImportIT`, `CsvReaderTest`, `ImportPage.test.tsx`.
+
+### 11–21. The pages
+
+| # | Page | Where | What's on it |
+|---|---|---|---|
+| 11 | Home | `/` | Category tiles, featured products in tabs, shop by budget |
+| 12 | Product listing | `/catalog` | Photo, name, rating, price; filters (category, brand, price, rating); sort; grid/list toggle; search; paging |
+| 13 | Product detail | `/catalog/{id}/{name}` | Photo gallery, full details, specs, reviews with stars and votes, Add to cart, related products |
+| 14 | Cart | `/bag` | Thumbnails, prices, quantities, remove, total without shipping, Checkout button |
+| 15 | Checkout | `/checkout` | Guest or signed in, delivery and billing address, delivery method, card payment, order summary |
+| 16 | Order confirmation | `/checkout/{orderId}` | Order number, payment reference, estimated delivery, summary |
+| 17 | Search results | `/catalog?q=…` | Same page as the listing: filters, sorting, result count, paging |
+| 18 | Admin | `/admin` | Products, categories, orders, delivery, users and roles, reviews, bulk upload, audit log |
+| 19 | Contact | `/contact` | A working form, emailed to the shop's inbox (see it in MailHog) |
+| 20 | About | `/about` | Company, mission, team, social media links |
+| 21 | 404 | any unknown address | A friendly message with a search box |
+
+Also: account (`/account`: profile, order history, addresses, 2FA), FAQ (`/faq`), Terms and privacy (`/legal/terms`).
+
+### 22. Quick cart preview
+
+The bag icon in every page's header opens a drop-down of the cart (a side panel on phones).
+`components/MiniCart.tsx`, `CartPanel.tsx`. Test: `CartPanel.test.tsx`.
+
+### 23. Quick search with suggestions
+
+The header's search box suggests words and products from the second letter typed (`components/SearchBox.tsx`).
+Test: `SearchIT`.
+
+### 24. Product images in several sizes
+
+Every upload is saved at 160, 600 and 1200 px wide plus the original (`catalog/ImageProcessor.java`). Each page
+asks for the smallest size that looks sharp (`lib/images.ts`). nginx caches images for a year; since a file's name
+changes when its content does, a CDN could be put in front with no extra work. Tests: `ImageProcessorTest`,
+`ProductImageIT`, `images.test.ts`.
+
+### 25. Works at 320, 768, 1024 and 1440 px
+
+One responsive layout: on small screens the header becomes a menu button, filters a drawer, the cart a full-height
+panel. Check it: `cd frontend && bun run layout-check --widths=320,768,1024,1440 / /catalog /bag`.
+
+### 26. Self-signed TLS certificate
+
+nginx serves https at <https://localhost:5443> with a certificate made on first start
+(`frontend/15-self-signed-cert.sh`); http redirects to https.
+
+### 27–28. Sensitive data encrypted at rest
+
+AES-256-GCM, key kept in `.env`, never in the database (`crypto/FieldCipher.java`).
+
+| What | How it's stored |
+|---|---|
+| User credentials | Passwords as bcrypt hashes; 2FA secret encrypted; backup codes hashed |
+| Personal data | Email, name, phone, avatar encrypted; email also as a keyed hash so sign-in can find it |
+| Shipping addresses | Order addresses and saved addresses encrypted |
+| Order details | Items bought, tracking number, payment id, card brand and last 4 encrypted |
+| Session tokens | Refresh tokens, reset links, guest cart tokens stored only as hashes; access tokens never stored |
+
+Prices, dates and statuses stay plain, since the shop sorts and filters on them. Tests: `EncryptionIT`,
+`UserEncryptionIT`, `FieldCipherTest`. See it:
+`docker compose exec postgres psql -U app -d iloveshopping -c "SELECT email, full_name FROM users LIMIT 3"`.
+
+### 29. Token bucket rate limiting
+
+Each user gets a "bucket" of requests per action (e.g. 10 sign-ins), refilled at a steady rate. Empty bucket →
+`429` with "try again in N seconds". It runs in Redis, so all servers share the same count
+(`ratelimit/RateLimiter.java`). Tests: `TokenBucketIT`, `RateLimitIT`.
+
+### 30. CIA triad
+
+- **Confidentiality** (only the right people see data): https, encryption at rest, staff roles with 2FA.
+- **Integrity** (data stays correct): encrypted values detect tampering, database rules (stock never below zero),
+  Stripe messages checked by signature, an audit log nobody can edit.
+- **Availability** (the shop stays up): rate limits, queues that retry, unpaid orders release stock by themselves,
+  and the load test shows how far it goes.
+
+### 31. SEO basics
+
+- Every page has its own title (under 60 characters) and description (`content/pageMeta.ts`, `pageMeta.test.ts`).
+- One `h1` per page, then `h2`–`h6` in order.
+- Readable URLs: `/catalog/{id}/walnut-chessboard-45-cm`, filters as `?brand=…`.
+- Alt text on every product photo. All checked by `bun run a11y-check`.
+
+### 32. Descriptive alt text on meaningful images
+
+Product photos use the product's name (or the alt text typed at upload); decorative images have `alt=""` so
+screen readers skip them. Checked by `bun run a11y-check`.
+
+### 33. Readable at 200% zoom
+
+Font sizes in `rem`, and the layout reflows instead of scrolling sideways. `bun run a11y-check` renders each page
+at 200% and reports anything that overflows.
+
+### 34. Why semantic HTML matters
+
+A screen reader reads the page's structure, not its looks. Real `<nav>`, `<main>`, `<button>`, headings and lists
+let a blind user jump between sections and use every control with the keyboard. A `<div>` with a click handler
+can't be found or pressed that way.
+
+### 35. Testing approach
+
+Each rule is tested at the cheapest level that proves it: pure logic as unit tests, anything touching the
+database, Redis or the queue against real ones in Docker (Testcontainers), pages and forms with Testing Library.
+Tricky cases get their own tests (two buyers for the last item, the same payment message twice). Manual checks
+for the rest: the a11y and layout scripts, Stripe's real card form, the load test.
+
+### 36. Automated tests: unit, API integration, user flow, security
+
+| Kind | Tests |
+|---|---|
+| Unit: product model | `ProductRequestValidationTest` |
+| Unit: cart | `CartServiceTest`, `CartPanel.test.tsx` |
+| Unit: order totals and shipping | `OrderTotalsTest`, `shipping.test.ts` |
+| Unit: JWT | `JwtServiceTest` |
+| Unit: input validation | `authRules.test.ts`, `checkoutRules.test.ts`, `CheckoutRulesTest` |
+| API integration and database | every `*IT` class, e.g. `ProductAdminIT`, `OrderIT`, `StaffOrderIT` |
+| User flow: product search | `SearchIT` |
+| Security: rate limiting | `TokenBucketIT`, `RateLimitIT`; also `InputValidationIT`, `StaffAccessIT` |
+
+### 37. Explain and demonstrate the tests
+
+`cd backend && mvn verify` and `cd frontend && bunx vitest run`. One class: `mvn verify -Dit.test=TokenBucketIT`.
+Good ones to show: `TokenBucketIT` (a burst is refused, then allowed again after the refill),
+`StaffAccessIT` (every role against every admin area), `ReviewModerationIT.manyVotesAtOnceAllCount`.
+
+### 38. Most users before responses pass 5 seconds
+
+About **1,200 users** at once (95% of requests within 4.6 s; 8.9 s at 1,600). Server limited to 2 CPU cores and
+1 GB. Full report: [README → Performance analysis report](README.md#performance-analysis-report).
+
+### 39. Throughput
+
+About **50 shopper journeys (230 requests) a second** with good response times at 800 users; at most 58 journeys
+(300 requests). Every target in the brief holds up to 800 users.
+
+### 40. Bottlenecks and fixes
+
+- Search suggestions for two letters read every product → **fixed**: cached for 30 s, now 3× faster.
+- bcrypt password checks use a lot of CPU → more CPU (not a weaker hash).
+- Everyone arriving in the same second → run more server containers behind nginx.
+- Filter counts on big shelves → cache them.
+
+Run it: `loadtest/run.sh 50 400` (about 4 minutes), then `loadtest/run.sh down`.
+
+## Extra
+
+### UI/UX quality and responsiveness
+One design across the shop and the admin area, tested at 320–1440 px, with clear buttons on every page.
+
+### Admin interface
+An overview page with a to-do list (what's waiting, oldest first), lists with filters and counts, bulk actions,
+keyboard shortcuts in the order queue, printable packing slips, and a confirm step before anything destructive.
+
+### Error handling and user guidance
+Every form error says how to fix it, next to the field and in a list at the top. Typed input is kept when
+something fails. Sold-out items, rate limits and payment failures each get a plain message.
+
+### Extra features
+Product variants (colour, size), metric and imperial sizes, saved addresses, data export and account deletion,
+part refunds, the bad rows of an import downloadable for fixing, FAQ and Terms pages.
+
+### Security, performance and accessibility
+See 5, 9 and 26–30 (security), 24 and 38–40 (performance), 31–34 (accessibility: no findings from
+`bun run a11y-check` on any shop or account page).
+
+### Docker, with only Docker and the payment CLI needed
+`./start.sh` builds and starts 7 containers (website, server, PostgreSQL, Redis, RabbitMQ, MailHog, Stripe CLI).
+The Stripe CLI runs in a container too, so Docker is the only thing to install.
+
+---
+
+## Project 2
 
 ### 1. The README contains an updated overview, ERD, setup instructions and usage guide for the commerce functionality
 

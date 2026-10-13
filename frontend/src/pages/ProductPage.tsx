@@ -16,15 +16,23 @@ import { axesOf, variantFor } from '../lib/variants';
 import { useAppDispatch } from '../store';
 import { opened } from '../store/cartSlice';
 import NotFoundPage from './NotFoundPage';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { metaDescription } from '../content/pageMeta';
+import { productPath } from '../lib/paths';
 
 export default function ProductPage() {
-  const { id = '' } = useParams();
+  const { id = '', slug } = useParams();
+  const navigate = useNavigate();
   const { data: product, error, isPending } = useQuery({ queryKey: ['product', id], queryFn: () => fetchProduct(id) });
+  usePageMeta(product ? product.name : null, product ? metaDescription(product.description ?? product.name) : undefined);
 
+  // A link without the slug, or with a renamed product's old one, still lands here by the id; the address
+  // then shows the current name, so there is one address per product to share and to index.
   useEffect(() => {
-    if (product) document.title = `${product.name} · Tavla`;
-    return () => { document.title = 'Tavla · Chess, Go and Backgammon'; };
-  }, [product]);
+    if (!product) return;
+    const canonical = productPath(product);
+    if (canonical !== `/catalog/${id}${slug ? `/${slug}` : ''}`) navigate(canonical + window.location.hash, { replace: true });
+  }, [product, id, slug, navigate]);
 
   if (isPending) return <div className="wrap page"><p className="status-line">Loading product…</p></div>;
   // an address that names no product (a typo, an old link) gets the shop's 404, with the search filled in
@@ -35,7 +43,7 @@ export default function ProductPage() {
       <div className="wrap page">
         <div className="empty">
           <p className="t-eyebrow">Not found</p>
-          <h2>That product is not on the shelf.</h2>
+          <h1>That product is not on the shelf.</h1>
           <p className="form-error" role="alert">{toApiError(error).message}</p>
           <Link className="btn" to="/catalog">Browse all products</Link>
         </div>
@@ -155,7 +163,7 @@ function Gallery({ product }: { product: ProductDetail }) {
           onClick={() => setViewer(true)}>
           {images.map((img, i) => (
             <div className="slide" key={img.id} aria-hidden={i !== at}>
-              <Photo src={img.url} framing={img.framing} pad={0.06} tile={tile} alt={img.altText ?? product.name} draggable={false}
+              <Photo src={img.url} framing={img.framing} pad={0.06} tile={tile} size="main" alt={img.altText ?? product.name} draggable={false}
                 loading={i === 0 ? 'eager' : 'lazy'} onError={() => drop(img.id)} />
             </div>
           ))}

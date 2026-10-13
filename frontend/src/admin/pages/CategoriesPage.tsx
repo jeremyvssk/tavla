@@ -4,7 +4,7 @@ import { CSSProperties, DragEvent, FormEvent, KeyboardEvent, useEffect, useState
 import { createCategory, deleteCategory, fetchStaffCategories, moveCategory, StaffCategory, updateCategory } from '../../api/admin';
 import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
-import { AdminHead, FieldError, invalid, LoadState } from '../parts';
+import { AdminHead, FieldError, invalid, LoadState, useConfirm } from '../parts';
 
 const KEY = ['staff', 'categories'];
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -137,6 +137,7 @@ export default function CategoriesPage() {
 
 function ShelfForm({ row, rows, onSaved, onDeleted }: { row: Row | null; rows: Row[]; onSaved: (id?: number) => void; onDeleted: () => void }) {
   const n = row?.node;
+  const [ask, confirmDialog] = useConfirm();
   const [name, setName] = useState(n?.name ?? '');
   const [slug, setSlug] = useState(n?.slug ?? '');
   // a new shelf's address follows its name until someone types one
@@ -221,13 +222,14 @@ function ShelfForm({ row, rows, onSaved, onDeleted }: { row: Row | null; rows: R
         <div className="formfoot">
           {n && (
             <button className="btn btn--line-danger btn--sm" type="button" disabled={!!why || remove.isPending} aria-describedby={why ? 'del-why' : undefined}
-              onClick={() => confirm(`Delete ${n.name}? This can't be undone.`) && remove.mutate()}>
+              onClick={async () => (await ask({ title: `Delete ${n.name}?`, body: <p>This can't be undone.</p>, action: 'Delete', danger: true })) && remove.mutate()}>
               Delete
             </button>
           )}
           <button className="btn" type="submit" disabled={save.isPending}>{save.isPending ? 'Saving…' : n ? 'Save' : 'Add the category'}</button>
         </div>
       </form>
+      {confirmDialog}
     </section>
   );
 }

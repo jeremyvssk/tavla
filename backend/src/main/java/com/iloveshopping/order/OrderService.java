@@ -7,6 +7,8 @@ import com.iloveshopping.cart.CartService;
 import com.iloveshopping.cart.exception.NotEnoughStockException;
 import com.iloveshopping.catalog.ProductService;
 import com.iloveshopping.catalog.dto.ProductForCart;
+import com.iloveshopping.delivery.DeliveryQuote;
+import com.iloveshopping.delivery.DeliveryService;
 import com.iloveshopping.order.dto.DeliveryDetailsResponse;
 import com.iloveshopping.order.dto.OrderDetailResponse;
 import com.iloveshopping.order.dto.OrderListParams;
@@ -70,19 +72,25 @@ public class OrderService {
     private final CartService cartService;
     private final ProductService productService;
     private final PaymentService paymentService;
+    private final DeliveryService deliveryService;
+    private final RefundRepository refunds;
     private final OrderNotifier notifier;
     private final TransactionTemplate tx;
     private final Duration paymentHold;
     private final ZoneId zone;
 
     public OrderService(OrderRepository orders, CartService cartService, ProductService productService,
-                        PaymentService paymentService, OrderNotifier notifier, TransactionTemplate tx,
+                        PaymentService paymentService, DeliveryService deliveryService, RefundRepository refunds,
+                        OrderNotifier notifier,
+                        TransactionTemplate tx,
                         @Value("${app.orders.payment-hold}") String paymentHold,
                         @Value("${app.orders.time-zone}") String zone) {
         this.orders = orders;
         this.cartService = cartService;
         this.productService = productService;
         this.paymentService = paymentService;
+        this.deliveryService = deliveryService;
+        this.refunds = refunds;
         this.notifier = notifier;
         this.tx = tx;
         this.paymentHold = Duration.parse(paymentHold);
@@ -182,14 +190,39 @@ public class OrderService {
                 o.getCountry()));
     }
 
-    /** An order as its emails need it: the full view, whether a guest placed it, and whether it was ever paid. */
-    public record EmailView(OrderDetailResponse order, boolean guest, boolean paid) {
+    /** Every order of the account, newest first, as its own order page shows it: the account's data export. */
+    @Transactional(readOnly = true)
+    public List<OrderDetailResponse> allFor(UUID userId) {
+        return orders.findByUserIdOrderByPlacedAtDesc(userId).stream().map(this::view).toList();
+    }
+
+    /** How many orders each account has placed, for the admin's users page; accounts with none are absent. */
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> orderCounts(java.util.Collection<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return orders.countByUsers(userIds).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> ((Number) row[1]).longValue()));
+    }
+
+    /**
+     * An order as its emails need it: the full view, whether a guest placed it, whether it was ever paid,
+     * whether the shop (not the shopper) cancelled it, and the amount of its latest part refund.
+     */
+    public record EmailView(OrderDetailResponse order, boolean guest, boolean paid, boolean cancelledByShop, BigDecimal lastRefund) {
+
+        public EmailView(OrderDetailResponse order, boolean guest, boolean paid) {
+            this(order, guest, paid, false, null);
+        }
     }
 
     @Transactional(readOnly = true)
     public Optional<EmailView> forEmail(UUID orderId) {
         return orders.findById(orderId).map(o -> new EmailView(view(o), o.getUserId() == null,
-                o.getHistory().stream().anyMatch(h -> h.getToStatus() == OrderStatus.PAYMENT_SUCCESSFUL)));
+                o.getHistory().stream().anyMatch(h -> h.getToStatus() == OrderStatus.PAYMENT_SUCCESSFUL),
+                o.getHistory().stream().anyMatch(h -> h.getToStatus() == OrderStatus.CANCELLED && h.getActor() == OrderActor.ADMIN),
+                refunds.latestAmount(orderId)));
     }
 
     /**
@@ -384,12 +417,20 @@ public class OrderService {
             }
         });
 
-        ShippingMethod method = ShippingMethod.fromWire(request.shippingMethod());
-        OrderTotals totals = OrderTotals.of(buyable.stream()
-                .map(line -> OrderTotals.lineTotal(products.get(line.productId()).price(), line.quantity())).toList(), method);
+        BigDecimal subtotal = OrderTotals.subtotal(buyable.stream()
+                .map(line -> OrderTotals.lineTotal(products.get(line.productId()).price(), line.quantity())).toList());
+        // switched off, or not to this country, since the page loaded: the same answer as an unknown option
+        DeliveryQuote method = deliveryService.quote(request.shippingMethod(), request.country(), subtotal)
+                .orElseThrow(() -> new OrderValidationException(Map.of("shippingMethod", "Choose a shipping option.")));
+        OrderTotals totals = OrderTotals.of(subtotal, method.cost());
+        if (request.expectedTotal() != null && request.expectedTotal().compareTo(totals.total()) != 0) {
+            // a price or the delivery changed while the checkout was open; the reservation above rolls back with this
+            throw new OrderConflictException("price_changed");
+        }
         Instant now = Instant.now();
         Order order = Order.place("TV-" + orders.nextNumber(), ownerOf(owner), delivery(request), method, totals,
                 now, now.plus(paymentHold));
+        order.billTo(billing(request.billingAddress()));
         int position = 0;
         for (CartService.OrderableLine line : buyable) {
             ProductForCart p = products.get(line.productId());
@@ -419,7 +460,7 @@ public class OrderService {
     }
 
     /** The order's stock back on the shelf, in product-id order like the reserving UPDATEs, so two can't deadlock. */
-    private void releaseStock(Order order) {
+    void releaseStock(Order order) {
         lines(order).stream().sorted(Comparator.comparing(CartService.OrderableLine::productId))
                 .forEach(l -> productService.releaseStock(l.productId(), l.quantity()));
     }
@@ -457,7 +498,7 @@ public class OrderService {
         return day.atStartOfDay(zone).toInstant();
     }
 
-    private static String euros(BigDecimal amount) {
+    static String euros(BigDecimal amount) {
         return "€" + amount.setScale(2).toPlainString();
     }
 
@@ -476,20 +517,25 @@ public class OrderService {
         return owner.isGuest() ? new Order.Owner(null, OpaqueTokens.sha256(owner.guestToken())) : new Order.Owner(owner.userId(), null);
     }
 
+    private static Order.Billing billing(PlaceOrderRequest.BillingAddress b) {
+        return b == null ? null : new Order.Billing(b.name().strip(), b.street().strip(), b.postcode().strip().toUpperCase(Locale.ROOT),
+                b.city().strip(), b.country());
+    }
+
     private static Order.Delivery delivery(PlaceOrderRequest r) {
         String flat = r.flat() == null || r.flat().isBlank() ? null : r.flat().strip();
         return new Order.Delivery(r.email().strip(), r.phone().strip(), r.firstName().strip(), r.lastName().strip(),
                 r.street().strip(), flat, r.postcode().strip().toUpperCase(Locale.ROOT), r.city().strip(), r.country());
     }
 
-    private OrderDetailResponse view(Order order) {
+    OrderDetailResponse view(Order order) {
         Optional<PaymentSummary> payment = paymentService.summary(order.getId());
         Instant paidAt = order.getHistory().stream()
                 .filter(h -> h.getToStatus() == OrderStatus.PAYMENT_SUCCESSFUL)
                 .map(OrderStatusChange::getCreatedAt).reduce((first, second) -> second).orElse(null);
         OrderDetailResponse.PaymentInfo paymentInfo = payment
                 .filter(p -> paidAt != null && p.cardBrand() != null && p.cardLast4() != null)
-                .map(p -> new OrderDetailResponse.PaymentInfo(p.cardBrand(), p.cardLast4(), paidAt))
+                .map(p -> new OrderDetailResponse.PaymentInfo(p.cardBrand(), p.cardLast4(), paidAt, p.reference()))
                 .orElse(null);
         String failure = order.getStatus() == OrderStatus.PAYMENT_FAILED ? payment.map(PaymentSummary::failure).orElse(null) : null;
         List<OrderDetailResponse.HistoryEntry> history = order.getHistory().stream()
@@ -500,11 +546,15 @@ public class OrderService {
                 order.itemCount(), order.getTotal(), order.getEmail(), order.getPhone(),
                 new OrderDetailResponse.ShipTo(order.getFirstName(), order.getLastName(), order.getStreet(), order.getFlat(),
                         order.getPostcode(), order.getCity(), order.getCountry()),
-                order.getShippingMethod().wire(),
+                order.getShippingMethod(), order.getShippingMethodName(), order.getShippingDaysMin(), order.getShippingDaysMax(),
                 order.getLines().stream().map(l -> new OrderDetailResponse.Line(l.getProductId(), l.getProductName(),
                         l.getOptions(), l.getImageUrl(), l.getImageFraming(), l.getUnitPrice(), l.getQuantity(), l.getLineTotal())).toList(),
                 order.getSubtotal(), order.getShippingCost(), order.getVat(),
                 order.getStatus().allows(OrderStatus.CANCELLED, OrderActor.SHOPPER),
-                paymentInfo, failure, order.getHoldUntil(), null, history);
+                paymentInfo, failure, order.getHoldUntil(),
+                order.getCarrier() == null ? null : new OrderDetailResponse.Tracking(order.getCarrier(), order.getTrackingNumber(), null, null),
+                history,
+                order.getBillingName() == null ? null : new OrderDetailResponse.BillTo(order.getBillingName(), order.getBillingStreet(),
+                        order.getBillingPostcode(), order.getBillingCity(), order.getBillingCountry()));
     }
 }

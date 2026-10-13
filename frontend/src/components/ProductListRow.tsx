@@ -10,13 +10,14 @@ import { useAppDispatch } from '../store';
 import { opened } from '../store/cartSlice';
 import Photo from './Photo';
 import Stars from './Stars';
+import { productPath } from '../lib/paths';
 
 export default function ProductListRow({ product: p, shelf }: { product: ProductSummary; shelf: string | null }) {
   const { add } = useCartActions();
   const dispatch = useAppDispatch();
   const [problem, setProblem] = useState<string | null>(null);
   const [broken, setBroken] = useState(false);
-  const to = `/catalog/${p.id}`;
+  const to = productPath(p);
 
   function addOne() {
     setProblem(null);
@@ -33,7 +34,7 @@ export default function ProductListRow({ product: p, shelf }: { product: Product
     <li>
       <Link className="ph" to={to} tabIndex={-1} aria-hidden="true">
         {p.primaryImageUrl && !broken
-          ? <Photo src={p.primaryImageUrl} framing={p.primaryImageFraming} pad={0.08} loading="lazy" onError={() => setBroken(true)} />
+          ? <Photo src={p.primaryImageUrl} framing={p.primaryImageFraming} pad={0.08} size="row" loading="lazy" onError={() => setBroken(true)} />
           : <span className="ph-none">{p.categorySlug.replace(/-/g, ' ')}</span>}
       </Link>
       <div>

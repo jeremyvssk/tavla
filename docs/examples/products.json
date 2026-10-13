@@ -1,0 +1,23 @@
+[
+  {
+    "sku": "EX-JSON-TRAVEL",
+    "name": "Magnetic travel chess set",
+    "description": "Folding magnetic board, 25 cm, pieces stay put on a train.",
+    "price": 19.9,
+    "stock": 40,
+    "category": "travel-sets",
+    "variant_group": "ex-json-travel",
+    "variant": { "Colour": "Red" },
+    "image_url": ["https://cdn.shopify.com/s/files/1/0876/1176/files/example-travel.jpg"],
+    "image_alt": ["Red magnetic travel chess set, open"]
+  },
+  {
+    "sku": "EX-JSON-TRAVEL-BLUE",
+    "name": "Magnetic travel chess set",
+    "price": 19.9,
+    "stock": 25,
+    "category": "travel-sets",
+    "variant_group": "ex-json-travel",
+    "variant": { "Colour": "Blue" }
+  }
+]

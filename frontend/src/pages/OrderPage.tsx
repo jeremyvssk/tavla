@@ -5,12 +5,15 @@ import { Link, useParams } from 'react-router-dom';
 import { cancelOrder, fetchOrder, OrderDetail } from '../api/orders';
 import { toApiError } from '../api/errors';
 import Icon from '../components/Icon';
-import { formatPlaced, formatWhen, ReadOnlyLines, shippingName, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
+import { formatPlaced, formatWhen, ReadOnlyLines, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
 import { formatPrice } from '../lib/format';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 const REASONS = ['Changed my mind', 'Ordered by mistake', 'Found it cheaper', 'Delivery takes too long', 'Something else'];
 
 export default function OrderPage() {
+  usePageMeta(...PAGE_META.order);
   const { orderId = '' } = useParams();
   const [cancelling, setCancelling] = useState(false);
   const { data: order, isPending, error } = useQuery({ queryKey: ['order', orderId], queryFn: () => fetchOrder(orderId) });
@@ -48,7 +51,7 @@ export default function OrderPage() {
                 {order.tracking.url && <a className="link" href={order.tracking.url} target="_blank" rel="noopener noreferrer">Track with {order.tracking.carrier}</a>}
               </div>
               <dl className="kv">
-                <div><dt>Courier</dt><dd>{order.tracking.carrier} · {shippingName(order.shippingMethod)}</dd></div>
+                <div><dt>Courier</dt><dd>{order.tracking.carrier} · {order.shippingName}</dd></div>
                 <div><dt>Parcel number</dt><dd className="code">{order.tracking.number}</dd></div>
                 {order.tracking.lastUpdate && <div><dt>Last update</dt><dd>{order.tracking.lastUpdate}</dd></div>}
               </dl>
@@ -57,7 +60,7 @@ export default function OrderPage() {
           <div className="card">
             <div className="card-h"><h2>Items</h2><span className="mute">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'}</span></div>
             <ReadOnlyLines lines={order.lines} />
-            <Totals subtotal={order.subtotal} shipping={order.shippingCost} method={order.shippingMethod} vat={order.vat} total={order.total}
+            <Totals subtotal={order.subtotal} shipping={order.shippingCost} methodName={order.shippingName} vat={order.vat} total={order.total}
               grandLabel={order.payment ? 'Paid' : 'Total'} />
           </div>
           <div className="card">
@@ -90,7 +93,7 @@ export default function OrderPage() {
             <h2>Delivery and payment</h2>
             <dl className="kv">
               <div><dt>Ship to</dt><dd><ShipTo order={order} /></dd></div>
-              <div><dt>Method</dt><dd>{shippingName(order.shippingMethod)}</dd></div>
+              <div><dt>Method</dt><dd>{order.shippingName}</dd></div>
               {!order.tracking && !offTrack && <div><dt>Tracking</dt><dd className="mute">A tracking link appears here, and in your email, when it ships.</dd></div>}
               <div><dt>Paid with</dt><dd>{order.payment
                 ? `${order.payment.brand} ending ${order.payment.last4} · ${formatPrice(order.total)} on ${formatWhen(order.payment.paidAt)}`

@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useCart } from '../hooks/useCart';
 import { formatPrice } from '../lib/format';
-import { FREE_SHIPPING_FROM } from '../lib/shipping';
+import { useDelivery } from '../hooks/useDelivery';
+import { toFreeShipping } from '../lib/shipping';
 import { useAppDispatch, useAppSelector } from '../store';
 import { closed } from '../store/cartSlice';
 import Icon from './Icon';
@@ -43,7 +44,7 @@ export default function MiniCart({ button }: { button: React.RefObject<HTMLButto
   // the line just added goes first, so it is the one in view
   const lines = [...cart.lines].sort((a, b) => Number(b.productId === added) - Number(a.productId === added));
   const rest = cart.lines.length - SHOWN;
-  const toFree = FREE_SHIPPING_FROM - cart.subtotal;
+  const free = toFreeShipping(useDelivery().data, cart.subtotal);
   const count = `${cart.itemCount} ${cart.itemCount === 1 ? 'item' : 'items'}`;
 
   return (
@@ -76,7 +77,7 @@ export default function MiniCart({ button }: { button: React.RefObject<HTMLButto
           <div className="mc-f">
             <p className="sumr"><span>Subtotal</span><b>{formatPrice(cart.subtotal)}</b></p>
             <p className="note2">
-              {toFree <= 0 ? 'Shipping is free on this order.' : `Add ${formatPrice(toFree)} more for free shipping.`} Prices include VAT.
+              {!free ? 'Shipping is added at checkout.' : free.left === 0 ? 'Shipping is free on this order.' : `Add ${formatPrice(free.left)} more for free shipping.`} Prices include VAT.
             </p>
             <div className="two">
               <Link className="btn btn--ghost" to="/bag">View cart</Link>

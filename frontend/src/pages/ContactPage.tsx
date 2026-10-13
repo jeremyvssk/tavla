@@ -9,6 +9,7 @@ import { usePageMeta } from '../hooks/usePageMeta';
 import { useAppSelector } from '../store';
 import type { Errors } from '../validation/authRules';
 import { ContactField, ContactForm, MESSAGE_MAX, TOPICS, validateContact } from '../validation/contactRules';
+import { PAGE_META } from '../content/pageMeta';
 
 const TILES: { icon: IconName; title: string; text: string; to: string }[] = [
   { icon: 'box', title: 'Where is my order?', text: 'Signed in: Your orders. As a guest: the link in your confirmation email.', to: '/account/orders' },
@@ -23,8 +24,7 @@ const LABELS: Record<ContactField, string> = {
 const EMPTY: ContactForm = { name: '', email: '', topic: '', orderNumber: '', message: '' };
 
 export default function ContactPage() {
-  usePageMeta('Contact us',
-    'Questions about an order, a return or a chess, Go or backgammon set? Write to Tavla. Answers on delivery, refunds and payments are one click away too.');
+  usePageMeta(...PAGE_META.contact);
   const user = useAppSelector((s) => s.auth.user);
   const [form, setForm] = useState<ContactForm>({ ...EMPTY, name: user?.fullName ?? '', email: user?.email ?? '' });
   const [errors, setErrors] = useState<Errors<ContactField>>({});

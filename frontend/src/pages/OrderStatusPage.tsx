@@ -8,18 +8,21 @@ import { toApiError } from '../api/errors';
 import { fetchOrder, OrderDetail, startPayment } from '../api/orders';
 import CardPayment, { CardPaymentHandle } from '../components/CardPayment';
 import Icon from '../components/Icon';
-import { formatWhen, ReadOnlyLines, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
+import { formatWhen, orderDays, ReadOnlyLines, ShipTo, StatusPill, Totals, Tracker } from '../components/OrderParts';
 import { formatPrice } from '../lib/format';
-import { arrivalWindow, SHIPPING } from '../lib/shipping';
+import { arrivalWindow } from '../lib/shipping';
 import { useAppSelector } from '../store';
 import { validateNewPassword } from '../validation/authRules';
 import { CancelSheet } from './OrderPage';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 // The webhook usually lands within seconds. Past this the page stops asking and says it is slow.
 const POLL_MS = 2000;
 const POLL_FOR_MS = 120_000;
 
 export default function OrderStatusPage() {
+  usePageMeta(...PAGE_META.orderStatus);
   const { orderId = '' } = useParams();
   // what Stripe told the browser at Pay, shown while the webhook catches up
   const stripeSaid = (useLocation().state as { stripeSaid?: string } | null)?.stripeSaid ?? null;
@@ -102,7 +105,6 @@ function Pending({ order, slow, stripeSaid }: { order: OrderDetail; slow: boolea
 function Confirmed({ order }: { order: OrderDetail }) {
   const signedIn = useAppSelector((s) => s.auth.status === 'authenticated');
   const [cancelling, setCancelling] = useState(false);
-  const option = SHIPPING.find((o) => o.method === order.shippingMethod) ?? SHIPPING[0];
   const ref = order.payment?.reference;
   return (
     <main className="wrap cf2">
@@ -117,7 +119,7 @@ function Confirmed({ order }: { order: OrderDetail }) {
           {ref && (
             <div><dt>Payment reference</dt><dd className="mono">{ref.length > 14 ? `${ref.slice(0, 7)}…${ref.slice(-4)}` : ref} <CopyButton text={ref} label="Copy payment reference" /><small>Stripe's id for the payment, if your bank asks.</small></dd></div>
           )}
-          <div><dt>Estimated delivery</dt><dd>{arrivalWindow(option, new Date(order.placedAt))}<small>{option.name}. Tracking link by email when it ships.</small></dd></div>
+          <div><dt>Estimated delivery</dt><dd>{arrivalWindow(orderDays(order), new Date(order.placedAt))}<small>{order.shippingName}. Tracking link by email when it ships.</small></dd></div>
         </dl>
         <div className="card"><Tracker order={order} /></div>
         <div className="card cf2-fill">
@@ -141,7 +143,7 @@ function Confirmed({ order }: { order: OrderDetail }) {
         <div className="card">
           <div className="card-h"><h2>Your order</h2><span className="mute">{order.itemCount} {order.itemCount === 1 ? 'item' : 'items'}</span></div>
           <ReadOnlyLines lines={order.lines} />
-          <Totals subtotal={order.subtotal} shipping={order.shippingCost} method={order.shippingMethod} vat={order.vat} total={order.total} grandLabel="Paid" />
+          <Totals subtotal={order.subtotal} shipping={order.shippingCost} methodName={order.shippingName} vat={order.vat} total={order.total} grandLabel="Paid" />
         </div>
         {signedIn ? (
           <div className="card cf2-fill">

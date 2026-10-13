@@ -2,6 +2,7 @@
 package com.iloveshopping.auth;
 
 import com.iloveshopping.auth.dto.TwoFactorSetupResponse;
+import com.iloveshopping.auth.exception.AccessConflictException;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
 import com.iloveshopping.auth.exception.TwoFactorAlreadyEnabledException;
@@ -98,14 +99,28 @@ public class TwoFactorService {
     }
 
     /**
-     * Disables 2FA after re-confirming the account password.
+     * Disables 2FA after re-confirming the account password. Never for staff: every staff account must
+     * have it, so the way to turn it off is to lose the staff role first.
      * @throws InvalidCredentialsException if the password is wrong.
+     * @throws AccessConflictException staff_needs_two_factor for a staff account
      */
     public void disable(User user, String password) {
         if (!userService.passwordMatches(user, password)) {
             throw new InvalidCredentialsException();
         }
+        if (user.getRole().isStaff()) {
+            throw new AccessConflictException("staff_needs_two_factor");
+        }
         userService.disableTwoFactor(user.getId());
+    }
+
+    /**
+     * The current code from the authenticator app, and only that: a backup code is for getting back in
+     * after losing the phone, not for approving changes. Used to confirm a role change.
+     */
+    public boolean verifyAppCode(User user, String code) {
+        return user.isTwoFactorEnabled() && user.getTwoFactorSecret() != null && code != null
+                && codeVerifier.isValidCode(user.getTwoFactorSecret(), code);
     }
 
     /**

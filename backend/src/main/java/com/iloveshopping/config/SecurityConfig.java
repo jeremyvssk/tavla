@@ -2,6 +2,8 @@
 package com.iloveshopping.config;
 
 import com.iloveshopping.auth.JwtAuthenticationFilter;
+import com.iloveshopping.auth.StaffArea;
+import com.iloveshopping.auth.exception.TwoFactorRequiredException;
 import com.iloveshopping.ratelimit.RateLimitFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
@@ -47,6 +49,10 @@ public class SecurityConfig {
                                 "/products", "/products/**", "/categories", "/categories/**",
                                 "/brands", "/brands/**", "/search/**")
                         .permitAll()
+                        // The contact form is for everyone; CAPTCHA, a per-address limit and length caps guard it.
+                        .requestMatchers(HttpMethod.POST, "/support/messages").permitAll()
+                        // The checkout lists the delivery options before anyone signs in.
+                        .requestMatchers(HttpMethod.GET, "/delivery-options").permitAll()
                         // Merging a guest cart into an account needs the account.
                         .requestMatchers(HttpMethod.POST, "/cart/merge").authenticated()
                         // The cart serves guests too: CartController picks the account's cart when a token is
@@ -60,14 +66,29 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/orders/*").permitAll()
                         // Stripe has no token: the webhook proves itself with its Stripe-Signature header.
                         .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
-                        // Reviews are written by any signed-in user; ReviewService checks ownership on delete.
+                        // Reviews are written, voted on and reported by any signed-in user; ReviewService checks the purchase and ownership.
                         .requestMatchers(HttpMethod.POST, "/products/*/reviews").authenticated()
                         .requestMatchers(HttpMethod.DELETE, "/products/*/reviews/*").authenticated()
-                        // Every other catalog write is admin-only. Written as one path rule, so a new
-                        // write endpoint under these paths is protected before anyone remembers to.
+                        .requestMatchers(HttpMethod.PUT, "/products/*/reviews/*/vote").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/products/*/reviews/*/vote").authenticated()
+                        .requestMatchers(HttpMethod.POST, "/products/*/reviews/*/report").authenticated()
+                        // Every other catalog write is for the staff who run the catalog. Written as one path rule,
+                        // so a new write endpoint under these paths is protected before anyone remembers to.
                         .requestMatchers("/products", "/products/**", "/categories", "/categories/**",
                                 "/brands", "/brands/**")
-                        .hasRole("ADMIN")
+                        .access(StaffArea.CATALOG.check())
+                        // The admin's API, one area per row (StaffArea has who may use each, and every one needs a
+                        // second factor). The last row closes any staff path that has no row of its own yet.
+                        .requestMatchers("/staff/overview").access(StaffArea.OVERVIEW.check())
+                        .requestMatchers("/staff/orders", "/staff/orders/**").access(StaffArea.ORDERS.check())
+                        .requestMatchers("/staff/reviews", "/staff/reviews/**").access(StaffArea.REVIEWS.check())
+                        .requestMatchers("/staff/products", "/staff/products/**", "/staff/categories", "/staff/categories/**",
+                                "/staff/imports", "/staff/imports/**")
+                        .access(StaffArea.CATALOG.check())
+                        .requestMatchers("/staff/delivery", "/staff/delivery/**").access(StaffArea.DELIVERY.check())
+                        .requestMatchers("/staff/users", "/staff/users/**").access(StaffArea.USERS.check())
+                        .requestMatchers("/staff/audit", "/staff/audit/**").access(StaffArea.AUDIT.check())
+                        .requestMatchers("/staff", "/staff/**").denyAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(unauthorizedEntryPoint())
@@ -83,7 +104,8 @@ public class SecurityConfig {
     }
 
     private AccessDeniedHandler forbiddenHandler() {
-        return (request, response, accessDeniedException) -> writeError(response, HttpServletResponse.SC_FORBIDDEN, "forbidden");
+        return (request, response, accessDeniedException) -> writeError(response, HttpServletResponse.SC_FORBIDDEN,
+                accessDeniedException instanceof TwoFactorRequiredException ? "two_factor_required" : "forbidden");
     }
 
     private void writeError(HttpServletResponse response, int status, String error) throws java.io.IOException {

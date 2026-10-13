@@ -15,7 +15,7 @@ class CheckoutRulesTest {
 
     private static PlaceOrderRequest at(String country, String postcode, String city) {
         return new PlaceOrderRequest("mart.kask@example.com", "+372 5876 2210", "Mart", "Kask", "Pärnu mnt 22", null,
-                postcode, city, country, "standard");
+                postcode, city, country, "standard", null, null);
     }
 
     @ParameterizedTest
@@ -58,7 +58,7 @@ class CheckoutRulesTest {
     @Test
     void aPhoneWithTooFewDigits_isRefused() {
         PlaceOrderRequest shortPhone = new PlaceOrderRequest("mart.kask@example.com", "+372 58 7", "Mart", "Kask",
-                "Pärnu mnt 22", null, "10141", "Tallinn", "EE", "standard");
+                "Pärnu mnt 22", null, "10141", "Tallinn", "EE", "standard", null, null);
         assertThatThrownBy(() -> CheckoutRules.check(shortPhone))
                 .isInstanceOfSatisfying(OrderValidationException.class, e -> assertThat(e.getFields()).containsKey("phone"));
     }

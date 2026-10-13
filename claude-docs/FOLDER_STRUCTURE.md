@@ -16,7 +16,10 @@ i-love-shopping1/
 ├── docs/
 │   ├── ASSIGNMENT.md            # the Project 1 brief, verbatim
 │   ├── ASSIGNMENT2.md           # the Project 2 brief and review checklist
-│   └── i-love-shopping-erd.png
+│   ├── i-love-shopping-erd.png
+│   └── examples/                # bulk upload files: products-good.csv, products-bad.csv, products.json
+├── loadtest/                    # k6: shop.js (journeys), run.sh (separate ils-load stack, steps, docker stats),
+│                                # docker-compose.loadtest.yml, summarize.py, results/ (one folder per run)
 ├── claude-docs/                 # design + build notes (this file, BUILD_ORDER, validation, ORDER_STATES)
 ├── homework/                    # study material and learning plan
 ├── tools/catalog-import/        # supplier scrapers + build_seed.py, which generates
@@ -32,38 +35,53 @@ i-love-shopping1/
 │       ├── IloveshoppingApplication.java
 │       ├── config/              # SecurityConfig, PasswordConfig, RestClientConfig,
 │       │                        # GoogleOAuthConfig, SchedulingConfig, MessagingConfig (queues + DLQs)
-│       ├── crypto/              # FieldCipher (AES-256-GCM), Encrypted (JPA converter)
+│       ├── crypto/              # FieldCipher (AES-256-GCM), Encrypted (JPA converter), BlindIndex (email_hash)
 │       ├── exception/           # GlobalExceptionHandler, ErrorResponse
 │       ├── user/                # User, UserRepository, UserService, Role, AuthProvider,
-│       │   └── exception/       # OAuthUserInfo
+│       │   ├── dto/             # OAuthUserInfo; StaffUserService/Controller (roles);
+│       │   └── exception/       # AccountService/Controller (/users/me), Address, AddressService,
+│       │                        # UserEncryptionBackfill (Flyway callback: encrypts plain rows)
+│       ├── audit/               # AuditLog, AuditEvent, AuditEntry + repo, AuditController,
+│       │   └── dto/             # AuditRetention (12 months), AuditKind, AuditTarget
+│       ├── csv/                 # Csv (safe writing), CsvReader (RFC 4180 reading)
+│       ├── delivery/            # DeliveryOption, ShopSettings + repos, DeliveryService (quote),
+│       │   ├── dto/             # DeliveryController (/delivery-options, /staff/delivery)
+│       │   └── exception/
+│       ├── overview/            # OverviewService, OverviewController (/staff/overview)
+│       ├── support/             # ContactController, ContactService, ContactMailListener
 │       ├── auth/                # AuthController, AuthService, JwtService, TokenStoreService,
 │       │   ├── dto/             # JwtAuthenticationFilter, TwoFactorService/Controller,
 │       │   └── exception/       # PasswordResetService/Controller, CaptchaService,
 │       │                        # EmailService, GoogleTokenVerifier, AccountThrottle,
-│       │                        # OpaqueTokens
+│       │                        # OpaqueTokens, StaffArea (role → /staff area), CurrentUser
 │       ├── catalog/             # Product, Category, Brand, ProductImage, ProductReview + repos,
 │       │   ├── dto/             # services and controllers; ImageProcessor, UnitConversion
-│       │   ├── exception/
+│       │   ├── exception/       # Staff*: product list, categories, reviews; PriceGuard,
+│       │   │                    # ProductUsage, PurchaseHistory (answered by order/)
+│       │   ├── imports/         # ImportController, ImportService, ImportRunner, ImportChecker,
+│       │   │                    # ImportFileReader, ImportColumns, ImportJob + repo
 │       │   └── search/          # SearchService, PostgresSearchService, SuggestionController
 │       ├── cart/                # Cart, CartItem + repos, CartOwner, CartService,
 │       │   ├── dto/             # CartController (incl. the sign-in merge), GuestCartCleanup
 │       │   └── exception/
 │       ├── order/               # Order, OrderLine, OrderStatusChange + repo, OrderStatus
-│       │   ├── dto/             # (the state machine), OrderActor, ShippingMethod, OrderTotals,
+│       │   ├── dto/             # (the state machine), OrderActor, OrderTotals, StaffOrderService/
+│       │   │                    # Controller, Refund, OrderNote + repos, OrderedProducts,
 │       │   └── exception/       # CheckoutRules, OrderService, OrderController, OrderExpiry,
 │       │                        # RefundRetry, PaymentEventListener, OrderNotice, OrderNotifier,
 │       │                        # OrderEmailListener, OrderMail
-│       ├── payment/             # PaymentGateway + StripePaymentGateway, Payment,
+│       ├── payment/             # PaymentGateway + StripePaymentGateway (FakePaymentGateway: load test), Payment,
 │       │   ├── dto/             # ProcessedPaymentEvent + repos, PaymentService, PaymentEvent,
 │       │   └── exception/       # PaymentFailures, PaymentWebhookController, PaymentEventPublisher
-│       ├── ratelimit/           # RateLimiter (Redis Lua), RateLimitFilter (per-IP rules)
+│       ├── ratelimit/           # RateLimiter (token bucket, Redis Lua), RateLimitFilter (per-IP rules + general bucket)
 │       └── storage/             # StorageService, LocalStorageService
 │   └── src/main/resources/
 │       ├── application.yml
 │       ├── db/migration/        # V1__initial_schema … V4__case_insensitive_email_unique,
 │       │                        # V5__catalog_search_indexes, V6__product_rating_trigger,
 │       │                        # V7__product_image_framing, V8__carts,
-│       │                        # V9__orders_and_payments, V10__encrypt_order_and_payment_columns
+│       │                        # V9__orders_and_payments, V10__encrypt_order_and_payment_columns,
+│       │                        # V11 roles + audit log … V15 account, addresses, billing
 │       └── db/seed/             # R__seed_catalog (repeatable demo catalog, generated)
 │   └── src/test/java/com/iloveshopping/
 │       ├── auth/                # JwtServiceTest, TokenStoreServiceTest, AuthServiceTest,
@@ -73,11 +91,17 @@ i-love-shopping1/
 │       │                        # PasswordResetControllerIT, TwoFactorControllerIT
 │       ├── cart/                # CartIT, CartServiceTest
 │       ├── crypto/              # FieldCipherTest
-│       ├── order/               # OrderIT, OrderCancelIT, OrderListIT, MessagingIT, EncryptionIT,
+│       ├── order/               # OrderIT, OrderCancelIT, OrderListIT, MessagingIT, EncryptionIT, StaffOrderIT,
 │       │                        # OrderTotalsTest, OrderStatusTest, CheckoutRulesTest, OrderMailTest
 │       ├── payment/             # PaymentFailuresTest, PaymentEventPublisherTest
-│       ├── user/                # UserServiceTest
+│       ├── user/                # UserServiceTest, StaffUserIT, AccountIT, UserEncryptionIT
+│       ├── audit/, csv/         # AuditLogIT; CsvTest, CsvReaderTest
+│       ├── delivery/            # DeliveryIT, DeliveryOptionTest
+│       ├── overview/            # OverviewIT
+│       ├── security/            # StaffAccessIT (+ the Project 1 probes)
 │       ├── catalog/             # CatalogBrowseIT, ProductAdminIT, SearchIT, ReviewIT,
+│       │   │                    # StaffCatalogIT, CategoryAdminIT, ReviewModerationIT,
+│       │   │                    # imports/ImportIT, PriceGuardTest,
 │       │   │                    # ProductImageIT + unit tests
 │       │   └── search/          # PostgresSearchServiceTest
 │       ├── security/            # InputValidationIT, RateLimitIT
@@ -92,7 +116,8 @@ i-love-shopping1/
     ├── package.json, bun.lock
     ├── vite.config.ts           # Vite + Vitest + dev proxy mirroring nginx
     ├── scripts/                 # layout-check.mjs (+ layout-measure.mjs): lists misaligned layout
-    │                            # on the running site, per screen width (`bun run layout-check`)
+    │                            # on the running site, per screen width (`bun run layout-check`);
+    │                            # a11y-check.mjs: axe WCAG 2.1 A + contrast, titles, headings, 200% zoom
     └── src/
         ├── main.tsx             # providers: Redux, React Query, router
         ├── App.tsx              # routes + session restore
@@ -100,7 +125,7 @@ i-love-shopping1/
         ├── p3.css               # Project 3 screens, ported from the design canvas
         ├── api/                 # client.ts (axios, in-memory token, refresh), auth.ts,
         │                        # catalog.ts, cart.ts, orders.ts, errors.ts; account.ts,
-        │                        # support.ts, admin.ts (mostly PLANNED endpoints)
+        │                        # support.ts, delivery.ts, admin.ts (the /staff API)
         ├── auth/session.ts      # restore / start (merges the guest cart) / end session (+ test)
         ├── store/               # Redux store, authSlice (user, never the token),
         │                        # cartSlice (whether the cart panel is open, what was just added)
@@ -115,14 +140,14 @@ i-love-shopping1/
         │                        # parts.tsx (shared bits), pages/ (Overview, Orders, Order,
         │                        # PackingSlips, Delivery, Products, ProductEdit, Categories,
         │                        # Import, Reviews, Users, Audit)
-        ├── content/             # FAQ and legal texts
+        ├── content/             # FAQ and legal texts; pageMeta.ts (every page's title and description)
         ├── components/          # Layout, SearchBox, MiniCart, Field, RequireAuth, ProductCard,
         │                        # ProductRow, ProductListRow, CartPanel (+ test), CardPayment
         │                        # (Stripe's form), PayMarks, Reviews, ReviewModal,
         │                        # TwoFactorPanel, OrderParts, Icon, Stars, GoogleButton, Recaptcha
         ├── hooks/, lib/         # useDebouncedValue, useCart, useMediaQuery, usePageMeta,
-        │                        # useActiveSection; loadScript, format, variants, shipping,
-        │                        # orderStatus, stripe, completions (+ tests)
+        │                        # useActiveSection, useDelivery, useFocusTrap; loadScript, format, variants,
+        │                        # shipping, orderStatus, stripe, completions, images (srcset), paths (slugs) (+ tests)
         └── test/                # Vitest setup, renderWithProviders
 ```
 

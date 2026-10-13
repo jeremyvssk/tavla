@@ -28,3 +28,6 @@ frontend/layout-shots/
 # Raw supplier scrapes; tools/catalog-import rebuilds the seed from them
 tools/catalog-import/data/
 __pycache__/
+
+# The load test copy of the stack: its own encryption key and ports (loadtest/run.sh writes it)
+loadtest/.env.loadtest

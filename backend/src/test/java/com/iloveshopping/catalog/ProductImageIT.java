@@ -63,4 +63,31 @@ class ProductImageIT extends CatalogTestSupport {
         mockMvc.perform(auth(multipart("/products/{id}/images", productId).file(file), customerToken()))
                 .andExpect(status().isForbidden());
     }
+
+    @Test
+    void upload_writesTheNarrowerCopiesBesideTheOriginal_andDeleteRemovesThemAll() throws Exception {
+        String admin = adminToken();
+        int category = jdbc.queryForObject("SELECT id FROM categories WHERE slug = 'go'", Integer.class);
+        String productId = createProduct(admin, "Image Sizes " + suffix(), "", "10.00", category, null);
+        MockMultipartFile file = new MockMultipartFile("file", "big.jpg", "image/jpeg", TestImages.jpeg(1600, 1200));
+
+        String body = mockMvc.perform(auth(multipart("/products/{id}/images", productId).file(file), admin))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String url = JsonPath.read(body, "$.url");
+        Integer imageId = JsonPath.read(body, "$.id");
+        Path original = imagesDir.resolve(url.substring("/images/".length()));
+        String base = original.getFileName().toString().replace(".jpg", "");
+        for (int width : new int[]{160, 600, 1200}) {
+            Path copy = original.resolveSibling(base + "-" + width + ".jpg");
+            assertThat(copy).exists();
+            assertThat(javax.imageio.ImageIO.read(copy.toFile()).getWidth()).isEqualTo(width);
+        }
+
+        mockMvc.perform(auth(delete("/products/{id}/images/{imageId}", productId, imageId), admin))
+                .andExpect(status().isNoContent());
+        try (var left = Files.list(original.getParent())) {
+            assertThat(left.map(p -> p.getFileName().toString())).noneMatch(n -> n.startsWith(base));
+        }
+    }
 }

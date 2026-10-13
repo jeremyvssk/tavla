@@ -24,7 +24,7 @@ class JwtServiceTest {
     void generatedToken_carriesIdentityClaimsAndNoPii() {
         UUID userId = UUID.randomUUID();
 
-        String token = jwtService.generateAccessToken(userId, Role.ADMIN);
+        String token = jwtService.generateAccessToken(userId, Role.ADMIN, false);
         Claims claims = jwtService.parse(token).getPayload();
 
         assertThat(claims.getSubject()).isEqualTo(userId.toString());
@@ -32,11 +32,19 @@ class JwtServiceTest {
         assertThat(claims.getId()).isNotBlank();           // jti present, for blocklisting
         assertThat(claims.getIssuedAt()).isNotNull();
         assertThat(claims.getExpiration()).isAfter(claims.getIssuedAt());
+        assertThat(claims).as("no second factor, no claim").doesNotContainKey("mfa");
+    }
+
+    @Test
+    void aSessionThatPassedASecondFactor_saysSoInTheToken() {
+        String token = jwtService.generateAccessToken(UUID.randomUUID(), Role.SUPPORT, true);
+
+        assertThat(jwtService.parse(token).getPayload().get("mfa", Boolean.class)).isTrue();
     }
 
     @Test
     void parse_rejectsTamperedSignature() {
-        String token = jwtService.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER);
+        String token = jwtService.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER, false);
         // Flip a character in the signature segment (after the last dot).
         String tampered = token.substring(0, token.length() - 1)
                 + (token.endsWith("A") ? "B" : "A");
@@ -48,7 +56,7 @@ class JwtServiceTest {
     @Test
     void parse_rejectsTokenSignedWithDifferentSecret() {
         JwtService other = new JwtService("a-completely-different-secret-key-value-here!!", "PT15M");
-        String foreignToken = other.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER);
+        String foreignToken = other.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER, false);
 
         assertThatThrownBy(() -> jwtService.parse(foreignToken))
                 .isInstanceOf(JwtException.class);
@@ -58,7 +66,7 @@ class JwtServiceTest {
     void parse_rejectsExpiredToken() {
         // Negative TTL produces an already-expired token without sleeping.
         JwtService shortLived = new JwtService(SECRET, "PT-1M");
-        String expired = shortLived.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER);
+        String expired = shortLived.generateAccessToken(UUID.randomUUID(), Role.CUSTOMER, false);
 
         assertThatThrownBy(() -> jwtService.parse(expired))
                 .isInstanceOf(ExpiredJwtException.class);

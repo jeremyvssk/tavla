@@ -65,4 +65,28 @@ class ImageProcessorTest {
         ImageProcessor.ProcessedImage out = processor.process(TestImages.pngWithTrailingScript());
         assertThat(new String(out.bytes(), StandardCharsets.ISO_8859_1)).doesNotContain("<script>");
     }
+
+    @Test
+    void aWideUpload_getsACopyAtEveryWidth_keepingItsShape() throws Exception {
+        ImageProcessor.ProcessedImage out = processor.process(TestImages.jpeg(2000, 1000));
+        assertThat(out.variants()).containsOnlyKeys(160, 600, 1200);
+        for (var entry : out.variants().entrySet()) {
+            BufferedImage copy = ImageIO.read(new ByteArrayInputStream(entry.getValue()));
+            assertThat(copy.getWidth()).isEqualTo(entry.getKey());
+            assertThat(copy.getHeight()).isEqualTo(entry.getKey() / 2);
+        }
+    }
+
+    @Test
+    void widthsTheOriginalDoesNotReach_areSkipped_notUpscaled() throws Exception {
+        ImageProcessor.ProcessedImage out = processor.process(TestImages.png(500, 400));
+        assertThat(out.variants()).containsOnlyKeys(160);
+        BufferedImage copy = ImageIO.read(new ByteArrayInputStream(out.variants().get(160)));
+        assertThat(copy.getWidth()).isEqualTo(160);
+        assertThat(copy.getHeight()).isEqualTo(128);
+        // A PNG keeps its type, so its transparency survives in the copies.
+        assertThat(copy.getColorModel().hasAlpha()).isTrue();
+
+        assertThat(processor.process(TestImages.png(160, 90)).variants()).isEmpty();
+    }
 }

@@ -5,8 +5,11 @@ import { forgotPassword } from '../api/auth';
 import { toApiError } from '../api/errors';
 import Field from '../components/Field';
 import { validateEmail } from '../validation/authRules';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 export default function ForgotPasswordPage() {
+  usePageMeta(...PAGE_META.forgot);
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string>();
   const [serverError, setServerError] = useState<string | null>(null);

@@ -5,6 +5,7 @@ import type { ProductSummary } from '../api/catalog';
 import { formatPrice } from '../lib/format';
 import { Star } from './Icon';
 import Photo from './Photo';
+import { productPath } from '../lib/paths';
 
 export default function ProductCard({ product }: { product: ProductSummary }) {
   // the photo is hotlinked from the supplier; if it is gone, the card shows the no-photo label instead
@@ -14,7 +15,7 @@ export default function ProductCard({ product }: { product: ProductSummary }) {
       <div className="ph">
         {!product.inStock && <span className="tag tag--out">Out of stock</span>}
         {product.primaryImageUrl && !broken ? (
-          <Photo src={product.primaryImageUrl} framing={product.primaryImageFraming} pad={0.08}
+          <Photo src={product.primaryImageUrl} framing={product.primaryImageFraming} pad={0.08} size="tile" alt={product.name}
             loading="lazy" decoding="async" draggable={false} onError={() => setBroken(true)} />
         ) : (
           <span className="ph-none" aria-hidden="true">{product.categorySlug.replace(/-/g, ' ')}</span>
@@ -23,7 +24,7 @@ export default function ProductCard({ product }: { product: ProductSummary }) {
       <div className="ft">
         <span className="pz">{formatPrice(product.price)}</span>
         {product.averageRating !== null && product.reviewCount > 0 && (
-          <span className="rt" aria-label={`Rated ${product.averageRating.toFixed(1)} out of 5 from ${product.reviewCount} reviews`}>
+          <span className="rt" role="img" aria-label={`Rated ${product.averageRating.toFixed(1)} out of 5 from ${product.reviewCount} reviews`}>
             <Star />
             <span aria-hidden="true">{product.averageRating.toFixed(1)} ({product.reviewCount})</span>
           </span>
@@ -31,7 +32,7 @@ export default function ProductCard({ product }: { product: ProductSummary }) {
       </div>
       {/* the link's ::after covers the whole card, so the photo is a click target too */}
       {/* long names stop at two lines, so the rows line up; the full name is the tooltip */}
-      <h3 title={product.name}><Link to={`/catalog/${product.id}`} draggable={false}>{product.name}</Link></h3>
+      <h3 title={product.name}><Link to={productPath(product)} draggable={false}>{product.name}</Link></h3>
     </article>
   );
 }

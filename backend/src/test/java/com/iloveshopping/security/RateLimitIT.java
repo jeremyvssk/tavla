@@ -1,4 +1,4 @@
-// Integration tests for rate limiting: per-IP limits, the two per-account login layers, and the 429 shape.
+// Integration tests for rate limiting through the API: per-IP rules, the general bucket, the per-account login layers, the 429 shape.
 package com.iloveshopping.security;
 
 import com.iloveshopping.support.AbstractIntegrationTest;
@@ -8,6 +8,8 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -98,19 +100,51 @@ class RateLimitIT extends AbstractIntegrationTest {
     @Test
     void suggestions_perIpLimit() throws Exception {
         String ip = randomIp();
-        for (int i = 0; i < 120; i++) {
-            mockMvc.perform(from(get("/search/suggestions").param("q", "wal"), ip)).andExpect(status().isOk());
-        }
-        mockMvc.perform(from(get("/search/suggestions").param("q", "wal"), ip))
-                .andExpect(status().isTooManyRequests());
+        // A bucket of 120 earning 2 a second: the 429 comes after the burst plus what the run's time earned.
+        assertRefusedAfter(120, 2, () -> from(get("/search/suggestions").param("q", "wal"), ip));
     }
 
     @Test
-    void unlimitedEndpoints_areNotCounted() throws Exception {
+    void everyOtherEndpoint_sharesTheWideGeneralBucket() throws Exception {
         String ip = randomIp();
-        for (int i = 0; i < 130; i++) {
-            mockMvc.perform(from(get("/categories"), ip)).andExpect(status().isOk());
+        // Far past the suggestions rule's 120, so a page of ordinary calls never meets a tight limit, but
+        // /categories and /brands share one general bucket per address: 300, earning 20 a second.
+        int[] n = {0};
+        assertRefusedAfter(300, 20, () -> from(get(n[0]++ % 2 == 0 ? "/categories" : "/brands"), ip));
+        mockMvc.perform(from(get("/categories"), ip))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "1"));
+        mockMvc.perform(from(get("/categories"), randomIp())).andExpect(status().isOk());
+    }
+
+    @Test
+    void stripesWebhook_isNeverRefused() throws Exception {
+        String ip = randomIp();
+        for (int i = 0; i < 305; i++) {
+            // unsigned, so refused for that; the point is that it is never a 429
+            int code = mockMvc.perform(from(post("/payments/webhook").content("{}"), ip)).andReturn().getResponse().getStatus();
+            assertThat(code).isNotEqualTo(429);
         }
+    }
+
+    /**
+     * Sends requests until one is refused, then checks how many got through: at least the bucket's
+     * capacity, and at most that plus the tokens the elapsed time earned back (and one for rounding).
+     */
+    private void assertRefusedAfter(int capacity, double perSecond,
+                                    java.util.function.Supplier<MockHttpServletRequestBuilder> request) throws Exception {
+        long started = System.nanoTime();
+        int passed = 0;
+        while (passed < capacity * 2) {
+            int code = mockMvc.perform(request.get()).andReturn().getResponse().getStatus();
+            if (code == 429) {
+                break;
+            }
+            assertThat(code).isEqualTo(200);
+            passed++;
+        }
+        double seconds = (System.nanoTime() - started) / 1e9;
+        assertThat(passed).isBetween(capacity, capacity + (int) Math.ceil(seconds * perSecond) + 1);
     }
 
     private String registered() throws Exception {

@@ -94,6 +94,8 @@ INSERT INTO brands (name, slug) VALUES
 ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name;
 
 -- Reviewers. The password hash is not a BCrypt string, so no password can ever log in as them.
+-- Inserted plain here; user/UserEncryptionBackfill encrypts them right after Flyway runs (V16), and the
+-- reviews below find them by their fixed ids.
 INSERT INTO users (id, email, password_hash, full_name, auth_provider, role) VALUES
     ('a0000000-0000-4000-8000-000000000001', 'reviewer-1@seed.iloveshopping.local', '!seed-no-login', 'Mari K.',    'LOCAL', 'CUSTOMER'),
     ('a0000000-0000-4000-8000-000000000002', 'reviewer-2@seed.iloveshopping.local', '!seed-no-login', 'Jaan T.',    'LOCAL', 'CUSTOMER'),
@@ -10918,21 +10920,31 @@ INSERT INTO seed_image VALUES
 ('american-wholesaler:588918620212', 'https://cdn.shopify.com/s/files/1/1951/3293/products/080119990270.PT07_3bf7a834-0214-4f2e-8e9e-82a72463faea.jpg?v=1568863286&width=1000', '18" Map Backgammon Set - White Board', 10, '{"ratio": 1.3333, "box": [0.0825, 0.1133, 0.9775, 0.9567], "bleed": "", "lift": 1.0, "print": false, "focus": [0.386, 0.492]}'),
 ('american-wholesaler:588918620212', 'https://cdn.shopify.com/s/files/1/1951/3293/products/080119990270.PT09_3f38380e-41e4-47c0-84b6-2338777fb864.jpg?v=1527370916&width=1000', '18" Map Backgammon Set - White Board', 11, '{"ratio": 1.3333, "box": [0.0, 0.0, 0.9025, 1.0], "bleed": "tbl", "lift": 1.0, "print": false, "focus": [0.425, 0.573]}');
 
-INSERT INTO products (id, name, description, price, stock_quantity, category_id, brand_id, attributes, active,
+-- The SKU is the supplier's code. Eight codes are shared by two listings (a book in two categories), so the
+-- second one gets "-2". A code another product already uses is left empty rather than failing the seed, and
+-- a SKU staff have set is kept. An archived product stays archived.
+INSERT INTO products (id, sku, name, description, price, stock_quantity, category_id, brand_id, attributes, active,
                       weight_kg, width_cm, height_cm, depth_cm, weight_lbs, width_in, height_in, depth_in, created_at, updated_at)
 SELECT md5('seed-product:' || s.key)::uuid,
+       CASE WHEN NOT EXISTS (SELECT 1 FROM products o WHERE lower(o.sku) = lower(s.sku)
+                                                       AND o.id <> md5('seed-product:' || s.key)::uuid) THEN s.sku END,
        s.name, s.description, s.price, s.stock, c.id, b.id, s.attributes, true,
        s.weight_kg, s.width_cm, s.height_cm, s.depth_cm,
        -- Same conversion ProductService applies on every write: metric is the source of truth.
        round(s.weight_kg * 2.20462262, 2), round(s.width_cm / 2.54, 2), round(s.height_cm / 2.54, 2), round(s.depth_cm / 2.54, 2),
        now() - make_interval(hours => s.n * 5), now()
-FROM seed_product s
+FROM (SELECT seed_product.*,
+             (attributes ->> 'supplier_sku')
+             || CASE WHEN row_number() OVER w > 1 THEN '-' || row_number() OVER w ELSE '' END AS sku
+      FROM seed_product
+      WINDOW w AS (PARTITION BY lower(attributes ->> 'supplier_sku') ORDER BY n)) s
 JOIN categories c ON c.slug = s.category
 LEFT JOIN brands b ON b.slug = s.brand
 ON CONFLICT (id) DO UPDATE SET
+    sku = COALESCE(products.sku, EXCLUDED.sku),
     name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price,
     stock_quantity = EXCLUDED.stock_quantity, category_id = EXCLUDED.category_id, brand_id = EXCLUDED.brand_id,
-    attributes = EXCLUDED.attributes, active = EXCLUDED.active,
+    attributes = EXCLUDED.attributes, active = EXCLUDED.active AND products.archived_at IS NULL,
     weight_kg = EXCLUDED.weight_kg, width_cm = EXCLUDED.width_cm, height_cm = EXCLUDED.height_cm, depth_cm = EXCLUDED.depth_cm,
     weight_lbs = EXCLUDED.weight_lbs, width_in = EXCLUDED.width_in, height_in = EXCLUDED.height_in, depth_in = EXCLUDED.depth_in,
     updated_at = now();
@@ -10961,7 +10973,7 @@ SELECT md5(p.id::text || u.id::text)::uuid,
        now() - make_interval(days => (h.pair % 200)::int)
 FROM seed_product s
 JOIN products p ON p.id = md5('seed-product:' || s.key)::uuid
-CROSS JOIN (SELECT id, row_number() OVER (ORDER BY id) AS k FROM users WHERE email LIKE '%@seed.iloveshopping.local') u
+CROSS JOIN (SELECT id, row_number() OVER (ORDER BY id) AS k FROM users WHERE id::text LIKE 'a0000000-0000-4000-8000-%') u
 CROSS JOIN LATERAL (SELECT hashtext(p.id::text)::bigint & 2147483647 AS product,
                            hashtext(p.id::text || u.id::text)::bigint & 2147483647 AS pair) h
 CROSS JOIN LATERAL (SELECT greatest(1, least(5, s.quality + (h.pair % 3)::int - 1)) AS rating) r

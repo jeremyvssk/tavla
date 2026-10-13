@@ -8,8 +8,11 @@ import Field from '../components/Field';
 import GoogleButton from '../components/GoogleButton';
 import { useAppDispatch } from '../store';
 import { Errors, hasErrors, validateLogin } from '../validation/authRules';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 export default function LoginPage() {
+  usePageMeta(...PAGE_META.login);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();

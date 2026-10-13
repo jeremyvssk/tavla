@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { CartLine, stockConflictOf, stockMessage } from '../api/cart';
+import { useDelivery } from '../hooks/useDelivery';
 import { toApiError } from '../api/errors';
 import { fetchLastDelivery, placeOrder } from '../api/orders';
 import { endSession } from '../auth/session';
@@ -13,12 +14,14 @@ import { Totals } from '../components/OrderParts';
 import Photo from '../components/Photo';
 import { useCart, useCartActions } from '../hooks/useCart';
 import { formatPrice } from '../lib/format';
-import { arrivalWindow, shippingCost, SHIPPING, ShippingMethod, summary } from '../lib/shipping';
+import { arrivalWindow, daysText, shippingCost, ShippingMethod, summary, toFreeShipping } from '../lib/shipping';
 import { useAppDispatch, useAppSelector } from '../store';
 import { Errors, hasErrors } from '../validation/authRules';
 import {
   BillingField, BillingForm, CheckoutField, CheckoutForm, COUNTRIES, CountryCode, FIELD_LABELS, FIELD_MAX, validateBilling, validateCheckout,
 } from '../validation/checkoutRules';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 const BLANK: CheckoutForm = { email: '', phone: '', firstName: '', lastName: '', street: '', flat: '', postcode: '', city: '', country: 'EE' };
 
@@ -26,6 +29,7 @@ const BLANK: CheckoutForm = { email: '', phone: '', firstName: '', lastName: '',
 const CAP_LINES = 3;
 
 export default function CheckoutPage() {
+  usePageMeta(...PAGE_META.checkout);
   const { status, user } = useAppSelector((s) => s.auth);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
@@ -36,7 +40,8 @@ export default function CheckoutPage() {
   const [form, setForm] = useState<CheckoutForm>(BLANK);
   const [sameBilling, setSameBilling] = useState(true);
   const [billing, setBilling] = useState<BillingForm>({ name: '', street: '', postcode: '', city: '', country: 'EE' });
-  const [method, setMethod] = useState<ShippingMethod>('standard');
+  const [method, setMethod] = useState<ShippingMethod>('');
+  const { data: delivery, refetch: refetchDelivery } = useDelivery();
   // a field shows its error once it has been left, or once Pay was pressed
   const [touched, setTouched] = useState<Partial<Record<CheckoutField, boolean>>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -98,12 +103,22 @@ export default function CheckoutPage() {
   });
 
   const buyable = cart.lines.filter((l) => l.countedQuantity > 0);
-  const { shipping, total, vat } = summary(cart.subtotal, method);
+  // the options that go to the chosen country; the first is picked until the shopper picks one
+  const options = useMemo(() => (delivery?.options ?? []).filter((o) => o.countries.includes(form.country)), [delivery, form.country]);
+  useEffect(() => {
+    if (options.length && !options.some((o) => o.id === method)) setMethod(options[0].id);
+  }, [options, method]);
+  const chosen = options.find((o) => o.id === method);
+  const { shipping, total, vat } = summary(cart.subtotal, chosen && delivery ? shippingCost(chosen, cart.subtotal, delivery.freeShipping) : 0);
 
   async function pay(event: FormEvent) {
     event.preventDefault();
     setSubmitted(true);
     setFailure(null);
+    if (!chosen) {
+      setFailure(delivery ? "We don't deliver to that country with any option right now." : 'The delivery options are still loading.');
+      return;
+    }
     if (hasErrors(errors) || hasErrors(billingErrors)) {
       // the summary at the top lists every field to fix; focus goes there so a screen reader reads it
       requestAnimationFrame(() => summaryBox.current?.focus());
@@ -121,7 +136,7 @@ export default function CheckoutPage() {
       // sent only when it differs: the server refuses fields it doesn't know
       const billingAddress = sameBilling ? {}
         : { billingAddress: Object.fromEntries(Object.entries(billing).map(([k, v]) => [k, v.trim()])) as BillingForm };
-      const order = await placeOrder({ ...trimmed, flat: trimmed.flat || null, shippingMethod: method, ...billingAddress });
+      const order = await placeOrder({ ...trimmed, flat: trimmed.flat || null, shippingMethod: method, expectedTotal: total, ...billingAddress });
       // Stripe's answer in the browser is only a hint: the order page waits for the webhook to say paid or failed
       const stripeSaid = await card.current?.confirm(order.clientSecret, order.id);
       // the order took these lines out of the cart on the server; refreshed only now, so the form stays mounted while Stripe confirms
@@ -138,6 +153,11 @@ export default function CheckoutPage() {
       } else if (apiError.code === 'validation_failed') {
         setServerErrors(apiError.fields as Errors<CheckoutField>);
         requestAnimationFrame(() => summaryBox.current?.focus());
+      } else if (apiError.code === 'price_changed') {
+        // the page's prices are old: load the server's, so the next Pay shows and sends the new total
+        refetch();
+        refetchDelivery();
+        setFailure(`${apiError.message} Nothing was charged.`);
       } else if (apiError.code === 'payment_unavailable' || apiError.code === 'cart_empty') {
         // the server put the cart back as it was (or it changed under us): show what it holds now
         refetch();
@@ -237,15 +257,16 @@ export default function CheckoutPage() {
             </div>
           </Section>
 
-          <Section n={3} title="Shipping" aside="Ships from Tallinn today if you order by 15:00">
+          <Section n={3} title="Shipping" aside={options.length ? `Ships from Tallinn today if you order by ${options[0].orderBy}` : undefined}>
             <div className="opts" role="radiogroup" aria-label="Shipping">
-              {SHIPPING.map((o) => {
-                const cost = shippingCost(o.method, cart.subtotal);
+              {delivery && options.length === 0 && <p className="note2">We don't deliver to this country with any option right now.</p>}
+              {options.map((o) => {
+                const cost = shippingCost(o, cart.subtotal, delivery!.freeShipping);
                 return (
-                  <label key={o.method} className={`opt${method === o.method ? ' on' : ''}`}>
-                    <input type="radio" name="shipping" value={o.method} checked={method === o.method} onChange={() => setMethod(o.method)} />
+                  <label key={o.id} className={`opt${method === o.id ? ' on' : ''}`}>
+                    <input type="radio" name="shipping" value={o.id} checked={method === o.id} onChange={() => setMethod(o.id)} />
                     <b>{o.name}</b>
-                    <span className="d">{o.blurb} · {o.method === 'locker' ? 'you pick the locker next' : `arrives ${arrivalWindow(o)}`}</span>
+                    <span className="d">{daysText(o)} · arrives {arrivalWindow(o)}</span>
                     <span className={`p${cost === 0 ? ' free' : ''}`}>
                       {cost === 0 ? <>Free<s>{formatPrice(o.price)}</s></> : formatPrice(cost)}
                     </span>
@@ -300,7 +321,8 @@ export default function CheckoutPage() {
         </div>
 
         <aside className="co-side" aria-label="Order summary">
-          <Summary lines={cart.lines} subtotal={cart.subtotal} method={method} shipping={shipping} vat={vat} total={total} />
+          <Summary lines={cart.lines} subtotal={cart.subtotal} methodName={chosen?.name ?? 'choose below'} shipping={shipping} vat={vat} total={total}
+            freeFrom={toFreeShipping(delivery, cart.subtotal)?.from ?? null} />
         </aside>
       </form>
     </CheckoutShell>
@@ -322,8 +344,8 @@ function Section({ n, title, aside, children }: { n: number; title: string; asid
 }
 
 /** Sticky beside the form on a desktop; on a tablet or phone a bar above it that folds open. */
-function Summary({ lines, subtotal, method, shipping, vat, total }: {
-  lines: CartLine[]; subtotal: number; method: ShippingMethod; shipping: number; vat: number; total: number;
+function Summary({ lines, subtotal, methodName, shipping, vat, total, freeFrom }: {
+  lines: CartLine[]; subtotal: number; methodName: string; shipping: number; vat: number; total: number; freeFrom: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const { setQuantity, remove } = useCartActions();
@@ -379,9 +401,9 @@ function Summary({ lines, subtotal, method, shipping, vat, total }: {
             );
           })}
         </ul>
-        <Totals subtotal={subtotal} shipping={shipping} method={method} vat={vat} total={total} grandLabel="Total" />
+        <Totals subtotal={subtotal} shipping={shipping} methodName={methodName} vat={vat} total={total} grandLabel="Total" />
         <div className="perks">
-          <span><Icon name="truck" />Free standard shipping over €100</span>
+          {freeFrom !== null && <span><Icon name="truck" />Free shipping over {formatPrice(freeFrom)}</span>}
           <span><Icon name="back" />30-day returns</span>
           <span><Icon name="lock" />Card payments by Stripe</span>
         </div>

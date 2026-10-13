@@ -36,6 +36,11 @@ public class MessagingConfig {
     public static final String EMAILS_KEY = "order.email";
     public static final String EMAILS_QUEUE = "orders.emails";
 
+    /** The contact form's messages, on their way to the shop's inbox (support/ContactMailListener). */
+    public static final String SUPPORT_EXCHANGE = "support";
+    public static final String CONTACT_KEY = "contact.message";
+    public static final String CONTACT_QUEUE = "support.contact-messages";
+
     public static final String DEAD_LETTERS_EXCHANGE = "dead-letters";
     public static final String DLQ = ".dlq";
 
@@ -48,7 +53,13 @@ public class MessagingConfig {
         Queue paymentEventsDlq = QueueBuilder.durable(PAYMENT_EVENTS_QUEUE + DLQ).build();
         Queue emails = withDeadLetters(EMAILS_QUEUE);
         Queue emailsDlq = QueueBuilder.durable(EMAILS_QUEUE + DLQ).build();
+        DirectExchange support = new DirectExchange(SUPPORT_EXCHANGE);
+        Queue contact = withDeadLetters(CONTACT_QUEUE);
+        Queue contactDlq = QueueBuilder.durable(CONTACT_QUEUE + DLQ).build();
         return new Declarables(payments, orders, deadLetters, paymentEvents, paymentEventsDlq, emails, emailsDlq,
+                support, contact, contactDlq,
+                BindingBuilder.bind(contact).to(support).with(CONTACT_KEY),
+                BindingBuilder.bind(contactDlq).to(deadLetters).with(contactDlq.getName()),
                 BindingBuilder.bind(paymentEvents).to(payments).with(PAYMENT_EVENTS_KEY),
                 BindingBuilder.bind(emails).to(orders).with(EMAILS_KEY),
                 BindingBuilder.bind(paymentEventsDlq).to(deadLetters).with(paymentEventsDlq.getName()),

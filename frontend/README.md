@@ -18,12 +18,12 @@ Every file starts with a one-line comment saying what it does.
 | `pages/` | One file per page (see below) |
 | `admin/` | The staff area under `/admin`, loaded only when a staff member opens it (see [Admin](#admin)) |
 | `components/` | Pieces used on several pages: header and footer (`Layout`), search box with word and product suggestions (`SearchBox`), the cart dropdown on desktop (`MiniCart`) and panel on smaller screens (`CartPanel`), product cards and list rows, reviews and the write-a-review dialog, form fields, the CAPTCHA and Google buttons, Stripe's card form (`CardPayment`), card brand marks (`PayMarks`), two-factor setup (`TwoFactorPanel`), and the order pages' shared parts (`OrderParts`: status pill, progress tracker, totals) |
-| `content/` | The text of the help, FAQ and legal pages |
-| `api/` | Every call to the backend. `client.ts` is the shared Axios setup. `orders.ts` covers placing, reading, paying again, the account's list, cancelling, and the last delivery details. `account.ts` (profile, addresses, data export, delete), `support.ts` (contact form) and most of `admin.ts` call endpoints the backend doesn't have yet; each is marked `PLANNED` |
+| `content/` | The text of the help, FAQ and legal pages, and every page's title and description (`pageMeta.ts`, tested for length) |
+| `api/` | Every call to the backend. `client.ts` is the shared Axios setup. `orders.ts` covers placing, reading, paying again, the account's list, cancelling, and the last delivery details. `account.ts` (profile, addresses, data export, delete), `support.ts` (contact form), `delivery.ts` (the delivery options and free-shipping limit the checkout and cart use) and `admin.ts` (everything under `/staff`) |
 | `auth/session.ts` | Starting, restoring and ending a login session |
 | `store/` | Redux state: who is logged in (`authSlice`) and whether the cart panel is open (`cartSlice`) |
 | `validation/` | Form rules (email format, password length...), copied from the backend's rules, and the checkout's (`checkoutRules.ts`, with the billing address), contact form's and address book's rules |
-| `hooks/`, `lib/` | Small helpers: the cart from the server (`useCart.ts`), delaying search input, loading Google's scripts, formatting prices, picking colour/size variants, placing a photo on its tile (`framing.ts`, used by `components/Photo.tsx`), shipping options and delivery dates (`shipping.ts`), how each order status looks (`orderStatus.ts`), loading Stripe.js (`stripe.ts`), finishing a typed word for the search (`completions.ts`), the page title and description (`usePageMeta.ts`) |
+| `hooks/`, `lib/` | Small helpers: the cart from the server (`useCart.ts`), delaying search input, loading Google's scripts, formatting prices, picking colour/size variants, placing a photo on its tile (`framing.ts`, used by `components/Photo.tsx`), shipping costs and delivery dates from the server's options (`shipping.ts`, with `useDelivery.ts` loading them), how each order status looks (`orderStatus.ts`), loading Stripe.js (`stripe.ts`), finishing a typed word for the search (`completions.ts`), the page title and description (`usePageMeta.ts`), the photo sizes a page offers (`images.ts`: `srcset` and `sizes` per place), readable product addresses (`paths.ts`), keeping Tab inside the open cart or menu (`useFocusTrap.ts`) |
 | `test/` | Test setup and a helper that renders a page with everything it needs |
 | `index.css`, `p3.css` | All styles and colours. `p3.css` holds the Project 3 screens, ported from the design canvas |
 
@@ -33,7 +33,7 @@ Every file starts with a one-line comment saying what it does.
 |---|---|---|
 | `/` | `HomePage` | The landing page with featured products |
 | `/catalog` | `CatalogPage` | Browsing and search results, with filters and sorting |
-| `/catalog/:id` | `ProductPage` | One product: photos, variants, specs, reviews, add to cart |
+| `/catalog/:id/:slug` | `ProductPage` | One product: photos, variants, specs, reviews, add to cart. The slug is the name; a missing or old one is replaced by the current one |
 | `/login`, `/register` | `LoginPage`, `RegisterPage` | Log in (plus the 2FA step) and sign up |
 | `/forgot`, `/reset` | `ForgotPasswordPage`, `ResetPasswordPage` | Password reset |
 | `/account` | `AccountPage` | Profile, your data as a file, deleting the account. Logged-in users only |
@@ -81,11 +81,10 @@ anyway; hiding a link is not the security.
 | `/admin/reviews` | `ReviewsPage` | New and reported reviews to keep or hide |
 | `/admin/users`, `/admin/audit` | `UsersPage`, `AuditPage` | Roles (a change asks for your two-factor code), and the log of every staff action |
 
-**What works today.** Product create, edit, photos and archive, and adding a category, use endpoints
-the backend has. Everything else in the admin calls `/staff/...` endpoints that don't exist yet; they
-are typed in `api/admin.ts` and marked `PLANNED`, so the page shows "The server can't do this yet"
-until they are built. The product list and the category tree fall back to the shop's own search and
-tree until then (active products only, no SKU or exact stock).
+Every admin page has its backend now (`api/admin.ts`). Pages wait for the server's answer before showing
+a change, and anything that can't be undone asks first in the page's own dialog (`useConfirm` in
+`admin/parts.tsx`), never the browser's `confirm()`. The product list and category tree still fall back to
+the shop's own search and tree if `/staff/...` answers 404, which only an older backend does.
 
 ---
 
@@ -150,9 +149,15 @@ jsdom, so the checkout and order tests swap `components/CardPayment` for a stand
 | `validation/contactRules.test.ts`, `addressRules.test.ts` | The contact form (an optional order number that must look like TV-24851, the message length) and a saved address (its name, then the checkout's rules) |
 | `lib/completions.test.ts` | Search suggestions: the typed word finished plus the next one, little words skipped, no repeats |
 | `admin/parts.test.ts` | How long an order has waited, as the admin queue shows it |
+| `admin/confirm.test.tsx` | The confirm dialog: the action button says yes, Escape says no, focus starts on Cancel |
+| `admin/pages/ImportPage.test.tsx` | A file the server can't read says why; a check with errors can't be imported; a clean one imports in one go |
 | `lib/shipping.test.ts` | Free shipping from €100, VAT inside the total, delivery dates that skip weekends |
 | `lib/variants.test.ts` | Picking the right product when you switch colour or size |
 | `lib/framing.test.ts` | Placing a photo: uncut products centred, cut edges on the tile edge, book covers whole |
+| `lib/images.test.ts` | Our uploads offer the 160/600/1200 px copies, Shopify photos their `?width=` sizes, others none |
+| `lib/paths.test.ts` | Product addresses: accents and symbols to a short slug, no slug when the name has no letters |
+| `content/pageMeta.test.ts` | Every page's title under 60 characters and description 155 to 160, the catalog's for any search or shelf |
+| `hooks/useFocusTrap.test.tsx` | Tab and Shift+Tab wrap inside the open cart or menu; nothing happens when it is closed |
 
 **Layout check.** `scripts/layout-check.mjs` opens pages of the running site (`bun dev`) at several
 screen widths and lists what looks misaligned: content wider than the screen, edges a few pixels
@@ -162,4 +167,13 @@ The comment at the top of the script lists its options and known false alarms.
 ```sh
 bun run layout-check /catalog /bag
 bun run layout-check --widths=390,1440 --login=you@example.com:password /account
+```
+
+**Accessibility and SEO check.** `scripts/a11y-check.mjs` runs axe-core's WCAG 2.1 A rules plus AA colour
+contrast on pages of the running site, then checks each page's title and description length, a single h1,
+headings in order, images without alt text, and whether it fits a 640 px window (200% zoom of 1280 px).
+
+```sh
+bun run a11y-check / /catalog /bag /contact
+bun run a11y-check --login=you@example.com:password /account /account/orders
 ```

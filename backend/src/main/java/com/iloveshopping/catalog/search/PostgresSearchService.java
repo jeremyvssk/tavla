@@ -22,8 +22,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Hand-written SQL through JdbcClient rather than JPA: ts_rank, the @@ operator, FILTER aggregates
@@ -39,6 +41,16 @@ public class PostgresSearchService implements SearchService {
     static final int DEFAULT_SIZE = 24;
     static final int SUGGESTION_LIMIT = 8;
     static final int SUGGESTION_MIN_LENGTH = 2;
+
+    /**
+     * Two letters are too short for the trigram index (a trigram is three), so every such suggestion reads
+     * all products: ~10 ms of database CPU against ~0.6 ms from three letters, and the search box asks at two.
+     * The load test found these were most of Postgres's work. Few two-letter inputs exist and everyone types
+     * them, so their answers are kept briefly; a renamed product shows its old name there for up to the TTL.
+     */
+    static final int CACHED_SUGGESTION_MAX_LENGTH = 2;
+    static final long CACHED_SUGGESTION_TTL_NANOS = 30_000_000_000L;
+    private static final int CACHED_SUGGESTION_ENTRIES = 2_000;
 
     /** Price facet bands: min inclusive, max exclusive, the same rule minPrice/maxPrice use. */
     static final List<BigDecimal[]> PRICE_BANDS = List.of(
@@ -105,6 +117,7 @@ public class PostgresSearchService implements SearchService {
     /** Which filter a facet query leaves out. See {@link #where}. */
     private enum Omit { NONE, BRAND, PRICE, RATING }
 
+    private final Map<String, CachedSuggestions> shortSuggestions = new ConcurrentHashMap<>();
     private final JdbcClient jdbc;
     private final ObjectMapper json;
 
@@ -333,12 +346,34 @@ public class PostgresSearchService implements SearchService {
      * escaped, otherwise typing "%" would match the entire catalog.
      */
     @Override
-    @Transactional(readOnly = true)
     public List<Suggestion> suggest(String query) {
         String q = query == null ? "" : query.strip();
         if (q.length() < SUGGESTION_MIN_LENGTH) {
             return List.of();
         }
+        if (q.length() > CACHED_SUGGESTION_MAX_LENGTH) {
+            return findSuggestions(q);
+        }
+        // ILIKE and similarity() both ignore case, so "DG" and "dg" share an answer. No transaction around
+        // this method, so an answer from memory never takes a database connection.
+        String key = q.toLowerCase(Locale.ROOT);
+        long now = System.nanoTime();
+        CachedSuggestions cached = shortSuggestions.get(key);
+        if (cached != null && cached.expiresAt() - now > 0) {
+            return cached.suggestions();
+        }
+        if (shortSuggestions.size() >= CACHED_SUGGESTION_ENTRIES) {
+            shortSuggestions.clear(); // two characters of any alphabet; bounded so odd input can't grow it
+        }
+        List<Suggestion> found = findSuggestions(q);
+        shortSuggestions.put(key, new CachedSuggestions(found, now + CACHED_SUGGESTION_TTL_NANOS));
+        return found;
+    }
+
+    private record CachedSuggestions(List<Suggestion> suggestions, long expiresAt) {
+    }
+
+    private List<Suggestion> findSuggestions(String q) {
         return jdbc.sql("""
                         SELECT p.id, p.name
                         FROM products p

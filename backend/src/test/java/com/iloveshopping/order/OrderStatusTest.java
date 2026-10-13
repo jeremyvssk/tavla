@@ -1,6 +1,7 @@
 // Unit tests for the order's state machine: every allowed move with its actor, the refused ones, and the history row.
 package com.iloveshopping.order;
 
+import com.iloveshopping.delivery.DeliveryQuote;
 import com.iloveshopping.order.exception.OrderConflictException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -27,6 +28,8 @@ class OrderStatusTest {
             "PAYMENT_SUCCESSFUL, PROCESSING, ADMIN",
             "PAYMENT_SUCCESSFUL, CANCELLED, SHOPPER",
             "PAYMENT_SUCCESSFUL, CANCELLED, ADMIN",
+            // staff may still cancel while packing, before it leaves
+            "PROCESSING, CANCELLED, ADMIN",
             "PROCESSING, SHIPPED, ADMIN",
             "SHIPPED, DELIVERED, ADMIN",
             "CANCELLED, REFUNDED, STRIPE"})
@@ -38,10 +41,10 @@ class OrderStatusTest {
     @CsvSource({
             // only Stripe says paid: not the browser reaching a success page
             "PENDING_PAYMENT, PAYMENT_SUCCESSFUL, SHOPPER",
-            // cancelling stops once packing starts
+            // the shopper's cancelling stops once packing starts, the staff's once it has left
             "PROCESSING, CANCELLED, SHOPPER",
-            "PROCESSING, CANCELLED, ADMIN",
             "SHIPPED, CANCELLED, SHOPPER",
+            "SHIPPED, CANCELLED, ADMIN",
             // money that moved can't un-move into a failure
             "PAYMENT_SUCCESSFUL, PAYMENT_FAILED, STRIPE",
             // the shopper can't skip the payment, or release their own hold early (yet)
@@ -61,10 +64,10 @@ class OrderStatusTest {
     }
 
     private static Order placed(Order.Owner owner, Instant now) {
-        OrderTotals totals = OrderTotals.of(List.of(new BigDecimal("65.00")), ShippingMethod.STANDARD);
+        OrderTotals totals = OrderTotals.of(new BigDecimal("65.00"), new BigDecimal("4.90"));
         return Order.place("TV-10001", owner,
                 new Order.Delivery("a@b.ee", "+372 5123 4567", "Kadri", "Saar", "Narva mnt 7", null, "10117", "Tallinn", "EE"),
-                ShippingMethod.STANDARD, totals, now, now.plusSeconds(1800));
+                new DeliveryQuote("standard", "Standard courier", new BigDecimal("4.90"), 2, 4), totals, now, now.plusSeconds(1800));
     }
 
     private static Order placed(Instant now) {

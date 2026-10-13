@@ -13,15 +13,15 @@ const GROUPS = [['all', 'All'], ['customers', 'Customers'], ['staff', 'Staff']] 
 const SIZE = 25;
 const ROLES: { role: Role; text: string }[] = [
   { role: 'CUSTOMER', text: 'Shops. No admin pages.' },
-  { role: 'SUPPORT', text: "Orders, customers, refunds, reviews and contact messages. Can't change products or prices." },
-  { role: 'SALES', text: "Products, categories, prices, bulk upload and delivery options. Can't see customers." },
-  { role: 'ADMIN', text: "Everything, including roles and the audit log. Nobody can change their own role, and the last admin can't be demoted." },
+  { role: 'SUPPORT', text: "Orders, customers, refunds (up to €100 an order) and reviews. Can't change products or prices." },
+  { role: 'SALES', text: "Products, categories, prices (up to half up or down at a time), bulk upload and delivery options. Can't see customers." },
 ];
+// Admin isn't on the list: it is given and taken only from the server's command line (README, "Becoming an admin"),
+// so even a taken-over admin account can't make more admins. Nobody changes their own role either.
 // [what, Support, Sales, Admin]: the same split as access.ts
 const MATRIX: [string, boolean, boolean, boolean][] = [
   ['See orders and customers', true, false, true],
   ['Pack, ship, cancel, refund', true, false, true],
-  ['Read contact messages', true, false, true],
   ['Moderate reviews', true, false, true],
   ['Products, categories, prices', false, true, true],
   ['Bulk upload', false, true, true],
@@ -79,8 +79,9 @@ export default function UsersPage() {
             {twoFactorOff && <Link to="?group=staff&twoFactor=off" replace aria-current="page">Two-factor off</Link>}
           </nav>
           <label className="isearch">
-            <Icon name="search" width={2} /><span className="vh">Find by email</span>
-            <input type="search" placeholder="Email" value={text} onChange={(e) => setText(e.target.value)} />
+            {/* emails are encrypted, so the server matches the whole address only (backend crypto/BlindIndex) */}
+            <Icon name="search" width={2} /><span className="vh">Find by whole email address</span>
+            <input type="search" placeholder="Whole email address" value={text} onChange={(e) => setText(e.target.value)} />
           </label>
         </div>
         <LoadState query={list} what="the users" />
@@ -115,14 +116,14 @@ export default function UsersPage() {
         )}
       </section>
       {editing && (
-        <RoleDrawer user={editing} lastAdmin={editing.role === 'ADMIN' && counts?.admins === 1} onClose={() => setEditing(null)}
+        <RoleDrawer user={editing} onClose={() => setEditing(null)}
           onSaved={(u) => { setEditing(null); setSaid(`${u.fullName} is now ${ROLE_NAMES[u.role]}.`); }} />
       )}
     </main>
   );
 }
 
-function RoleDrawer({ user, lastAdmin, onClose, onSaved }: { user: StaffUser; lastAdmin: boolean; onClose: () => void; onSaved: (u: StaffUser) => void }) {
+function RoleDrawer({ user, onClose, onSaved }: { user: StaffUser; onClose: () => void; onSaved: (u: StaffUser) => void }) {
   const client = useQueryClient();
   const [role, setRole] = useState<Role>(user.role);
   const [code, setCode] = useState('');
@@ -133,6 +134,7 @@ function RoleDrawer({ user, lastAdmin, onClose, onSaved }: { user: StaffUser; la
     onError: (e) => { if (toApiError(e).code === 'invalid_2fa_code') setCodeError('That code is not valid. Type the one your app shows now.'); },
   });
   const first = user.fullName.split(' ')[0];
+  const admin = user.role === 'ADMIN';
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!/^\d{6}$/.test(code)) { setCodeError('The 6 digits from your authenticator app'); return; }
@@ -152,18 +154,18 @@ function RoleDrawer({ user, lastAdmin, onClose, onSaved }: { user: StaffUser; la
         )}
         <fieldset>
           <legend>Role</legend>
-          <div className="roleopts">
-            {ROLES.map((r) => {
-              const locked = lastAdmin && r.role !== 'ADMIN';
-              return (
-                <label key={r.role} className={[role === r.role && 'on', locked && 'off'].filter(Boolean).join(' ') || undefined}>
-                  <input type="radio" name="role" checked={role === r.role} disabled={locked} onChange={() => setRole(r.role)} />
+          {admin ? (
+            <p className="hint">{first} is an admin. Admin is given and taken only on the server, not here, so a stolen admin session can't change who runs the shop.</p>
+          ) : (
+            <div className="roleopts">
+              {ROLES.map((r) => (
+                <label key={r.role} className={role === r.role ? 'on' : undefined}>
+                  <input type="radio" name="role" checked={role === r.role} onChange={() => setRole(r.role)} />
                   <b>{ROLE_NAMES[r.role]}</b><span>{r.text}</span>
                 </label>
-              );
-            })}
-          </div>
-          {lastAdmin && <p className="hint">{first} is the only admin, so the role stays Admin until someone else has it.</p>}
+              ))}
+            </div>
+          )}
         </fieldset>
         <details className="rolemx">
           <summary>What each role can do</summary>
@@ -187,15 +189,15 @@ function RoleDrawer({ user, lastAdmin, onClose, onSaved }: { user: StaffUser; la
             {...invalid('otp', codeError, 'otp-h')} onChange={(e) => { setCode(e.target.value.replace(/\D/g, '')); setCodeError(undefined); }} />
           <FieldError id="otp" error={codeError} />
           <p className="hint" id="otp-h">
-            Every role change asks for it, so a stolen session alone can't hand out rights. The change goes to the audit log with your name,
-            and every admin gets an email when someone gains or loses Admin.
+            Every role change asks for it, so a stolen session alone can't hand out rights. The change goes to the audit log,
+            and the person's open sessions get the new role at once.
           </p>
         </div>
         {otherError && <p className="msg msg--bad" role="alert"><Icon name="alert" />{otherError}</p>}
       </form>
       <div className="modal-f">
         <button className="btn btn--ghost" type="button" onClick={onClose}>Cancel</button>
-        <button className="btn" type="submit" form="role-form" disabled={save.isPending || role === user.role}>{save.isPending ? 'Saving…' : 'Save role'}</button>
+        <button className="btn" type="submit" form="role-form" disabled={save.isPending || admin || role === user.role}>{save.isPending ? 'Saving…' : 'Save role'}</button>
       </div>
     </Drawer>
   );

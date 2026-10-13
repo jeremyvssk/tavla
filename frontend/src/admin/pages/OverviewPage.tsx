@@ -16,7 +16,7 @@ export default function OverviewPage() {
   const role = useAppSelector((s) => s.auth.user!.role);
   const q = useQuery({ queryKey: ['staff', 'overview'], queryFn: fetchOverview, retry: false, staleTime: 60_000 });
   const o = q.data;
-  type Todo = { section: Section; to: string; icon: IconName; title: string; text: string; n: number; red?: boolean };
+  type Todo = { section: Section; to: string; icon: IconName; title: string; text: string; n: number | null; red?: boolean };
   const all: Todo[] = o ? [
     { section: 'orders', to: '/admin/orders?status=PAYMENT_SUCCESSFUL', icon: 'box', title: 'Orders to pack', n: o.toPack,
       text: o.oldestToPack ? `Paid and waiting. The oldest came in ${stamp.format(new Date(o.oldestToPack))}.` : 'Paid and waiting.' },
@@ -28,7 +28,8 @@ export default function OverviewPage() {
     { section: 'users', to: '/admin/users?twoFactor=off', icon: 'shield', title: 'Staff without two-factor', n: o.staffWithout2fa,
       text: "They can't open the admin until they turn it on." },
   ] : [];
-  const todo = all.filter((t) => can(role, t.section));
+  // the server leaves out (null) what the role can't open; the role check here only hides the rows
+  const todo = all.filter((t): t is Todo & { n: number } => can(role, t.section) && t.n !== null);
 
   return (
     <main className="adm-body">

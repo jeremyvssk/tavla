@@ -1,0 +1,58 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(90)<2000' p(90)=90.91ms
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.18%
+
+    journey_ok
+    ✓ 'rate>0.98' rate=99.61%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 7471   101.667574/s
+    checks_succeeded...: 99.81% 7457 out of 7471
+    checks_failed......: 0.18%  14 out of 7471
+
+    ✓ categories
+    ✓ product
+    ✓ suggestions
+    ✓ login
+    ✓ listing
+    ✗ add to cart
+      ↳  97% — ✓ 265 / ✗ 7
+    ✓ search
+    ✓ profile
+    ✓ cart
+    ✓ reviews
+    ✓ delivery options
+    ✓ my orders
+    ✗ place order
+      ↳  97% — ✓ 253 / ✗ 7
+
+    CUSTOM
+    journey_ok.....................: 99.61% 1567 out of 1573
+    transactions...................: 1573   21.405848/s
+
+    HTTP
+    http_req_duration..............: avg=70.97ms med=6.64ms p(90)=90.91ms p(95)=360.4ms  p(99)=1.35s  max=4.06s 
+      { expected_response:true }...: avg=71.09ms med=6.64ms p(90)=91.13ms p(95)=361.13ms p(99)=1.35s  max=4.06s 
+    http_req_failed................: 0.18%  14 out of 7516
+    http_reqs......................: 7516   102.279947/s
+
+    EXECUTION
+    iteration_duration.............: avg=12.13s  med=11.98s p(90)=15.36s  p(95)=16.48s   p(99)=18.62s max=21.34s
+    iterations.....................: 1573   21.405848/s
+    vus............................: 68     min=0            max=300
+    vus_max........................: 300    min=300          max=300
+
+    NETWORK
+    data_received..................: 30 MB  409 kB/s
+    data_sent......................: 872 kB 12 kB/s
+
+
+

@@ -3,6 +3,7 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError } from 'axios';
 import * as cartApi from '../api/cart';
+import * as deliveryApi from '../api/delivery';
 import * as ordersApi from '../api/orders';
 import { renderWithProviders } from '../test/renderWithProviders';
 import { signedIn, signedOut } from '../store/authSlice';
@@ -10,6 +11,17 @@ import CheckoutPage from './CheckoutPage';
 
 vi.mock('../api/cart', async (actual) => ({ ...(await actual<typeof import('../api/cart')>()), fetchCart: vi.fn() }));
 vi.mock('../api/orders');
+vi.mock('../api/delivery', async (actual) => ({ ...(await actual<typeof import('../api/delivery')>()), fetchDeliveryOptions: vi.fn() }));
+
+// the three options the migration seeds, as GET /delivery-options sends them
+const delivery: deliveryApi.DeliverySettings = {
+  freeShipping: { from: 100, on: true },
+  options: [
+    { id: 'standard', name: 'Standard courier', price: 4.9, orderBy: '15:00', daysMin: 2, daysMax: 4, countries: ['EE', 'LV', 'LT', 'FI'], active: true, freeOverLimit: true },
+    { id: 'express', name: 'Express courier', price: 12.9, orderBy: '15:00', daysMin: 1, daysMax: 1, countries: ['EE', 'LV', 'LT', 'FI'], active: true, freeOverLimit: false },
+    { id: 'locker', name: 'Parcel locker', price: 3.9, orderBy: '15:00', daysMin: 1, daysMax: 3, countries: ['EE'], active: true, freeOverLimit: false },
+  ],
+};
 
 // Stripe's frame can't run in jsdom; a stand-in answers check and confirm the way the test says.
 const card = vi.hoisted(() => ({ check: vi.fn(), confirm: vi.fn() }));
@@ -36,12 +48,14 @@ async function open(user?: { fullName: string; email: string }) {
     result.store.dispatch(user ? signedIn({ id: 'u1', role: 'CUSTOMER', authProvider: 'LOCAL', twoFactorEnabled: false, ...user }) : signedOut());
   });
   await screen.findByRole('heading', { name: 'Checkout' });
+  await screen.findByRole('radio', { name: /Standard courier/ });
   return result;
 }
 
 describe('CheckoutPage', () => {
   beforeEach(() => {
     vi.mocked(cartApi.fetchCart).mockResolvedValue(cart);
+    vi.mocked(deliveryApi.fetchDeliveryOptions).mockResolvedValue(delivery);
     // no earlier order unless a test says so (clearAllMocks keeps implementations, so each test starts here)
     vi.mocked(ordersApi.fetchLastDelivery).mockResolvedValue(null);
     card.check.mockResolvedValue(null);

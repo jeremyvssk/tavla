@@ -1,4 +1,50 @@
-# Build Order (P1)
+# Build Order
+
+Project 3 is first; the Project 1 order follows it, kept as it was.
+
+## Project 3 (status 2026-10-12)
+
+Planned and decided with the author in the "Tavla Experience Plan" artifact (steps 0–12). Steps 0–11 are built;
+the calls made without the author for 7–11 are listed in that artifact for review:
+
+- **0. Docs reconciled.** Scope, schema, Redis keys and the JWT `mfa` claim in the CLAUDE files.
+- **1. Roles, staff 2FA, audit log.** SUPPORT/SALES/ADMIN with a least-privilege matrix (`auth/StaffArea`), every
+  staff area needs a second factor (`mfa` claim), Admin only from the command line, role changes need the
+  changer's TOTP and revoke the person's tokens at once (`tokens_revoked_before`). Append-only `audit_log` (V11).
+  *Verified:* `StaffAccessIT`, `StaffUserIT`, `AuditLogIT`.
+- **2. Catalog management.** SKU, archive-or-delete, the staff product list with state counts, bulk changes,
+  Sales' ±50% price limit (`catalog/PriceGuard`), CSV export, category edit/move/delete, and the all-or-nothing
+  bulk upload (`catalog/imports`, V12). *Verified:* `StaffCatalogIT`, `CategoryAdminIT`, `ImportIT`, `CsvReaderTest`.
+- **3. Orders and delivery.** Delivery options in the database (`delivery/`, V13), the staff order queue,
+  Processing/Shipped/Delivered with emails, staff cancel while packing, part refunds (Support up to €100 an
+  order), team notes, `price_changed` at checkout. *Verified:* `StaffOrderIT`, `DeliveryIT`.
+- **4. Reviews.** Only a delivered purchase may review; helpful votes (atomic counter), reports, moderation
+  (keep/hide/unhide), hidden reviews out of the average (V14). *Verified:* `ReviewModerationIT`, `ReviewIT`.
+- **5. Staff overview and frontend wiring.** `GET /staff/overview` narrowed per role; in-page confirm dialogs;
+  the 2FA upgrade token. *Verified:* `OverviewIT`, `ImportPage.test.tsx`, `confirm.test.tsx`.
+- **6. Account.** Profile, data export, deletion that keeps orders unlinked, saved addresses, billing address
+  on orders (V15), and the contact form emailed to the shop's inbox through the queue. *Verified:* `AccountIT`.
+
+- **7. Images in every size.** Uploads saved at 160/600/1200 px beside the original (`ImageProcessor.WIDTHS`,
+  no upscaling); `srcset`/`sizes` per place (`lib/images.ts`, `Photo`); nginx falls back to the original for a
+  missing size and caches images and assets for a year. *Verified:* `ImageProcessorTest`, `ProductImageIT`,
+  `images.test.ts`; live headers and fallback through nginx.
+- **8. Token bucket.** `RateLimiter` rewritten as a Lua token bucket on Redis TIME (`rate_bucket:`), a general
+  per-IP bucket for unlisted paths, the webhook exempt. *Verified:* `TokenBucketIT`, `RateLimitIT`.
+- **9. Encrypt the rest.** `users` email/full_name/avatar_url/two_factor_secret (V16), `email_hash` blind index
+  (`crypto/BlindIndex`), `UserEncryptionBackfill` after every migrate. *Verified:* `UserEncryptionIT` and the
+  suites that look users up; live backfill of the seed's reviewers.
+- **10. Findable and usable.** Per-page title/description (`content/pageMeta.ts`), `/catalog/{id}/{slug}` with
+  redirect to the current slug, focus trap for the cart and menu, product alt text, `scripts/a11y-check.mjs`
+  (axe WCAG 2.1 A + contrast, headings, 200% zoom). *Verified:* `pageMeta.test.ts`, `paths.test.ts`,
+  `useFocusTrap.test.tsx`; a11y-check clean on every shop and account page.
+- **11. Load test.** k6 in Docker against a separate stack (`loadtest/`), four journeys, 10–800 users; report in
+  the README. Fix found by it: two-letter suggestions cached for 30 s. *Verified:* `SearchIT`; before/after runs
+  in `loadtest/results/`.
+
+Remaining: 12, the author's review of the 7–11 calls, a full rehearsal, and a commit.
+
+## Project 1
 
 Status as of 2026-09-29. Sequence matters: each step's verification is the next step's foundation.
 

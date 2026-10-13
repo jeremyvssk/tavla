@@ -1,4 +1,4 @@
-// Builds and sends the order emails: confirmation, payment failed, cancelled, refunded.
+// Builds and sends the order emails: confirmation, payment failed, cancelled, shipped, delivered, refunded.
 package com.iloveshopping.order;
 
 import com.iloveshopping.order.dto.OrderDetailResponse;
@@ -28,8 +28,6 @@ public class OrderMail {
     private static final Logger log = LoggerFactory.getLogger(OrderMail.class);
 
     private static final Map<String, String> COUNTRIES = Map.of("EE", "Estonia", "LV", "Latvia", "LT", "Lithuania", "FI", "Finland");
-    private static final Map<String, String> SHIPPING = Map.of(
-            "standard", "Standard courier", "express", "Express courier", "locker", "Parcel locker");
 
     private final OrderService orderService;
     private final JavaMailSender mailSender;
@@ -77,7 +75,7 @@ public class OrderMail {
                     + "Thank you for your order. Your payment went through, and we'll start packing it soon.\n\n"
                     + summary(o, zone) + "\n\n"
                     + (o.payment() == null ? "Paid by card." : "Paid with " + card + ".") + "\n\n"
-                    + "Delivery: " + SHIPPING.getOrDefault(o.shippingMethod(), o.shippingMethod()) + ", to\n" + address(o) + "\n\n"
+                    + "Delivery: " + o.shippingName() + ", to\n" + address(o) + "\n\n"
                     + "Your order and its status: " + link + sign);
             case PAYMENT_FAILED -> new Email("Order " + o.number() + ": the payment didn't go through", hi
                     + "We couldn't take the payment of " + euros(o.total()) + " for order " + o.number() + ". "
@@ -86,7 +84,14 @@ public class OrderMail {
                     + (o.holdUntil() == null ? "" : "We're holding your items until " + time(o.holdUntil(), zone)
                             + ". To pay with another card, open your order:\n" + link + "\n\nAfter that the items go back on sale.")
                     + sign);
-            case CANCELLED -> view.paid()
+            case CANCELLED -> view.cancelledByShop()
+                    ? new Email("Order " + o.number() + " is cancelled", hi
+                            + "We're sorry: we had to cancel your order " + o.number() + ". "
+                            + (view.paid() ? "We've asked our payment provider to send " + euros(o.total()) + " back to " + card
+                                    + ". Banks take 5 to 10 working days to show it, and we'll email you once the refund is sent."
+                                    : "Nothing was charged.")
+                            + "\n\nIf you have questions, reply to this email.\n\nYour order: " + link + sign)
+                    : view.paid()
                     ? new Email("Order " + o.number() + " is cancelled", hi
                             + "Your order " + o.number() + " is cancelled, as you asked, and the items are back on sale.\n\n"
                             + "We've asked our payment provider to send " + euros(o.total()) + " back to " + card + ". "
@@ -96,6 +101,19 @@ public class OrderMail {
                             + "We didn't receive a payment for order " + o.number() + " in time, so it was cancelled and the items "
                             + "went back on sale. Nothing was charged.\n\n"
                             + "If you still want them, they're back in your cart." + sign);
+            case SHIPPED -> new Email("Order " + o.number() + " is on its way", hi
+                    + "Your order " + o.number() + " has left our warehouse with " + o.shippingName() + ".\n\n"
+                    + (o.tracking() == null ? "" : "Courier: " + o.tracking().carrier() + "\nParcel number: " + o.tracking().number() + "\n\n")
+                    + "It should arrive within " + days(o) + ", to\n" + address(o) + "\n\n"
+                    + "Your order: " + link + sign);
+            case DELIVERED -> new Email("Order " + o.number() + " was delivered", hi
+                    + "Your order " + o.number() + " was delivered. We hope you enjoy it.\n\n"
+                    + "If something is wrong with it, reply to this email and we'll put it right.\n\n"
+                    + "Your order: " + link + sign);
+            case PART_REFUNDED -> new Email("A refund for order " + o.number(), hi
+                    + "We've refunded " + (view.lastRefund() == null ? "part of your order" : euros(view.lastRefund()))
+                    + " for order " + o.number() + " to " + card + ". Banks take 5 to 10 working days to show it on your statement.\n\n"
+                    + "Your order: " + link + sign);
             case REFUNDED -> new Email("Refund for order " + o.number() + " is on its way", hi
                     + "We've refunded " + euros(o.total()) + " for order " + o.number() + " to " + card + ". "
                     + "Banks take 5 to 10 working days to show it on your statement.\n\n"
@@ -112,6 +130,12 @@ public class OrderMail {
                 .append("Shipping: ").append(o.shippingCost().signum() == 0 ? "free" : euros(o.shippingCost())).append('\n')
                 .append("Total paid: ").append(euros(o.total())).append(", including ").append(euros(o.vat())).append(" VAT");
         return text.toString();
+    }
+
+    private static String days(OrderDetailResponse o) {
+        return o.deliveryDaysMin() == o.deliveryDaysMax()
+                ? o.deliveryDaysMax() + (o.deliveryDaysMax() == 1 ? " working day" : " working days")
+                : o.deliveryDaysMin() + " to " + o.deliveryDaysMax() + " working days";
     }
 
     private static String address(OrderDetailResponse o) {

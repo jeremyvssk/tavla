@@ -1,0 +1,56 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(90)<2000' p(90)=46.78ms
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.00%
+
+    journey_ok
+    ✓ 'rate>0.98' rate=100.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 646     8.777809/s
+    checks_succeeded...: 100.00% 646 out of 646
+    checks_failed......: 0.00%   0 out of 646
+
+    ✓ product
+    ✓ categories
+    ✓ suggestions
+    ✓ login
+    ✓ add to cart
+    ✓ listing
+    ✓ search
+    ✓ cart
+    ✓ delivery options
+    ✓ profile
+    ✓ reviews
+    ✓ my orders
+    ✓ place order
+
+    CUSTOM
+    journey_ok.....................: 100.00% 135 out of 135
+    transactions...................: 135     1.834372/s
+
+    HTTP
+    http_req_duration..............: avg=22.14ms med=12.84ms p(90)=46.78ms p(95)=77.23ms p(99)=102.21ms max=181.66ms
+      { expected_response:true }...: avg=22.14ms med=12.84ms p(90)=46.78ms p(95)=77.23ms p(99)=102.21ms max=181.66ms
+    http_req_failed................: 0.00%   0 out of 691
+    http_reqs......................: 691     9.389266/s
+
+    EXECUTION
+    iteration_duration.............: avg=11.83s  med=11.46s  p(90)=14.95s  p(95)=15.9s   p(99)=19s      max=19.88s  
+    iterations.....................: 135     1.834372/s
+    vus............................: 5       min=0          max=25
+    vus_max........................: 25      min=25         max=25
+
+    NETWORK
+    data_received..................: 2.8 MB  38 kB/s
+    data_sent......................: 82 kB   1.1 kB/s
+
+
+

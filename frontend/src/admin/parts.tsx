@@ -1,5 +1,5 @@
-// Pieces every admin page shares: the role guard, the page head, a table's foot, a row's menu, the drawer and the load states.
-import { KeyboardEvent as ReactKeyboardEvent, ReactNode, useEffect, useId, useRef, useState } from 'react';
+// Pieces every admin page shares: the role guard, the page head, a table's foot, a row's menu, the drawer, the confirm dialog and the load states.
+import { KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AuditEntry } from '../api/admin';
 import { toApiError } from '../api/errors';
@@ -63,11 +63,28 @@ export function LoadState({ query, what }: { query: { isPending: boolean; isErro
  */
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const box = useRef<HTMLElement>(null);
+  useModal(box, onClose, 'input, select, textarea');
+  return (
+    <>
+      <div className="mscrim" aria-hidden="true" onClick={onClose} />
+      <section className="adm-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-h" ref={box}>
+        <div className="modal-h">
+          <h2 id="dr-h">{title}</h2>
+          <button className="iconb" type="button" aria-label="Close" onClick={onClose}><Icon name="close" width={2} /></button>
+        </div>
+        {children}
+      </section>
+    </>
+  );
+}
+
+/** Focus in on open (the first match of `first`), Tab kept inside, Escape closes, no scrolling behind, focus back on close. */
+function useModal(box: RefObject<HTMLElement | null>, onClose: () => void, first: string) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
-    box.current?.querySelector<HTMLElement>('input, select, textarea')?.focus();
+    box.current?.querySelector<HTMLElement>(first)?.focus();
     document.documentElement.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close.current();
@@ -83,16 +100,47 @@ export function Drawer({ title, onClose, children }: { title: string; onClose: (
       document.documentElement.style.overflow = '';
       before?.focus?.();
     };
-  }, []);
+  }, [box, first]);
+}
+
+export interface ConfirmOptions {
+  title: string;
+  body?: ReactNode;
+  /** the button that goes ahead: "Archive", "Refund €41.90" */
+  action: string;
+  danger?: boolean;
+}
+
+/**
+ * The page's own "are you sure", in place of the browser's confirm(), which can't be styled, reads as a
+ * warning from the browser rather than the shop, and blocks the page. `ask` resolves true on the action
+ * button and false on Cancel, Escape or the scrim. Focus starts on Cancel, so Enter alone does nothing harmful.
+ */
+export function useConfirm(): [(options: ConfirmOptions) => Promise<boolean>, ReactNode] {
+  const [open, setOpen] = useState<{ options: ConfirmOptions; resolve: (yes: boolean) => void } | null>(null);
+  const ask = (options: ConfirmOptions) => new Promise<boolean>((resolve) => setOpen({ options, resolve }));
+  const answer = (yes: boolean) => {
+    open?.resolve(yes);
+    setOpen(null);
+  };
+  return [ask, open && <ConfirmDialog options={open.options} onAnswer={answer} />];
+}
+
+function ConfirmDialog({ options: o, onAnswer }: { options: ConfirmOptions; onAnswer: (yes: boolean) => void }) {
+  const box = useRef<HTMLElement>(null);
+  const id = useId();
+  useModal(box, () => onAnswer(false), '[data-cancel]');
   return (
     <>
-      <div className="mscrim" aria-hidden="true" onClick={onClose} />
-      <section className="adm-drawer" role="dialog" aria-modal="true" aria-labelledby="dr-h" ref={box}>
-        <div className="modal-h">
-          <h2 id="dr-h">{title}</h2>
-          <button className="iconb" type="button" aria-label="Close" onClick={onClose}><Icon name="close" width={2} /></button>
+      <div className="mscrim" aria-hidden="true" onClick={() => onAnswer(false)} />
+      <section className="modal confirm" role="alertdialog" aria-modal="true" aria-labelledby={`${id}-h`}
+        aria-describedby={o.body ? `${id}-b` : undefined} ref={box}>
+        <div className="modal-h"><h2 id={`${id}-h`}>{o.title}</h2></div>
+        {o.body && <div className="modal-b" id={`${id}-b`}>{o.body}</div>}
+        <div className="modal-f">
+          <button className="btn btn--ghost" type="button" data-cancel onClick={() => onAnswer(false)}>Cancel</button>
+          <button className={o.danger ? 'btn btn--danger' : 'btn'} type="button" onClick={() => onAnswer(true)}>{o.action}</button>
         </div>
-        {children}
       </section>
     </>
   );

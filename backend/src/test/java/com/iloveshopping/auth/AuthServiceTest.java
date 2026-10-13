@@ -1,11 +1,14 @@
 // Unit tests for AuthService orchestration: timing-equal login, attempt limits, 2FA gating, and refresh reuse detection.
 package com.iloveshopping.auth;
 
+import com.iloveshopping.audit.AuditEvent;
+import com.iloveshopping.audit.AuditLog;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
 import com.iloveshopping.ratelimit.RateLimitExceededException;
 import com.iloveshopping.user.AuthProvider;
+import com.iloveshopping.user.Role;
 import com.iloveshopping.user.User;
 import com.iloveshopping.user.UserService;
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,6 +40,7 @@ class AuthServiceTest {
     @Mock GoogleTokenVerifier googleTokenVerifier;
     @Mock TwoFactorService twoFactorService;
     @Mock AccountThrottle accountThrottle;
+    @Mock AuditLog auditLog;
 
     @InjectMocks AuthService authService;
 
@@ -102,7 +108,7 @@ class AuthServiceTest {
         // The live key is gone (it was rotated away), but the tombstone still names the owner.
         // Two parties held this token; there is no way to tell which one is calling now.
         UUID userId = UUID.randomUUID();
-        when(tokenStore.findUserIdByRefreshToken("spent")).thenReturn(Optional.empty());
+        when(tokenStore.findSessionByRefreshToken("spent")).thenReturn(Optional.empty());
         when(tokenStore.findUserIdByUsedRefreshToken("spent")).thenReturn(Optional.of(userId));
 
         assertThatThrownBy(() -> authService.refresh("spent"))
@@ -113,7 +119,7 @@ class AuthServiceTest {
     @Test
     void refresh_tokenThatWasNeverIssued_revokesNothing() {
         // Garbage and expired tokens are not evidence of theft, so they must not log anyone out.
-        when(tokenStore.findUserIdByRefreshToken("junk")).thenReturn(Optional.empty());
+        when(tokenStore.findSessionByRefreshToken("junk")).thenReturn(Optional.empty());
         when(tokenStore.findUserIdByUsedRefreshToken("junk")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refresh("junk"))
@@ -133,6 +139,62 @@ class AuthServiceTest {
                 .isInstanceOf(InvalidTwoFactorCodeException.class);
         verify(twoFactorService).registerFailedAttempt("chal");
         verify(twoFactorService, never()).consumeChallenge(anyString());
+    }
+
+    @Test
+    void login_passwordOnly_issuesASessionWithoutASecondFactor() {
+        User user = localUser();
+        when(userService.findByEmail("ada@example.com")).thenReturn(Optional.of(user));
+        when(userService.passwordMatches(user, "right")).thenReturn(true);
+
+        authService.login("ada@example.com", "right", IP);
+
+        verify(jwtService).generateAccessToken(user.getId(), Role.CUSTOMER, false);
+        verify(tokenStore).issueRefreshToken(new TokenStoreService.Session(user.getId(), false));
+        verify(userService).recordSignIn(user.getId());
+        verifyNoInteractions(auditLog);
+    }
+
+    @Test
+    void twoFactorLogin_rightCode_issuesASessionThatPassedTheSecondFactor() {
+        User user = localUser();
+        user.setRole(Role.SUPPORT);
+        when(twoFactorService.peekChallenge("chal")).thenReturn(Optional.of(user.getId()));
+        when(userService.getById(user.getId())).thenReturn(user);
+        when(twoFactorService.verifyCode(user, "123456")).thenReturn(true);
+
+        authService.twoFactorLogin("chal", "123456");
+
+        verify(jwtService).generateAccessToken(user.getId(), Role.SUPPORT, true);
+        verify(tokenStore).issueRefreshToken(new TokenStoreService.Session(user.getId(), true));
+        // staff sign-ins are audited
+        verify(auditLog).recordFor(eq(user.getId()), eq(Role.SUPPORT), any(AuditEvent.class));
+    }
+
+    @Test
+    void refresh_keepsTheSessionsSecondFactor() {
+        User user = localUser();
+        user.setRole(Role.ADMIN);
+        TokenStoreService.Session session = new TokenStoreService.Session(user.getId(), true);
+        when(tokenStore.findSessionByRefreshToken("live")).thenReturn(Optional.of(session));
+        when(userService.getById(user.getId())).thenReturn(user);
+
+        authService.refresh("live");
+
+        verify(tokenStore).rotateRefreshToken(session, "live");
+        verify(jwtService).generateAccessToken(user.getId(), Role.ADMIN, true);
+    }
+
+    @Test
+    void login_wrongPasswordForAStaffAccount_isAudited() {
+        User user = localUser();
+        user.setRole(Role.SALES);
+        when(userService.findByEmail("ada@example.com")).thenReturn(Optional.of(user));
+        when(userService.passwordMatches(user, "wrong")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.login("ada@example.com", "wrong", IP))
+                .isInstanceOf(InvalidCredentialsException.class);
+        verify(auditLog).recordFor(isNull(), isNull(), any(AuditEvent.class));
     }
 
     private User localUser() {

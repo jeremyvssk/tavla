@@ -1,4 +1,4 @@
-// Typed calls for the signed-in shopper's own account. PLANNED: none of these endpoints exist yet; this is the shape the pages expect.
+// Typed calls for the signed-in shopper's own account: profile, data export, deletion and saved addresses (/users/me).
 import type { CountryCode } from '../validation/checkoutRules';
 import { api } from './client';
 
@@ -44,12 +44,15 @@ export async function exportMyData(): Promise<Blob> {
   return (await api.get('/users/me/export', { responseType: 'blob' })).data;
 }
 
-/** DELETE /users/me with the password: removes the account, addresses, cart and reviews; orders stay, unlinked. */
-export async function deleteAccount(password: string) {
-  await api.delete('/users/me', { data: { password } });
+/**
+ * DELETE /users/me: removes the account, addresses, cart and reviews; orders stay, unlinked. A password account
+ * confirms with its password; a Google account, which has none, types its email. A staff account gets 409 staff_account.
+ */
+export async function deleteAccount(confirm: { password: string } | { email: string }) {
+  await api.delete('/users/me', { data: confirm });
 }
 
-/** GET /users/me/addresses: at most 10. */
+/** GET /users/me/addresses: at most 10 (409 address_limit past that). */
 export async function fetchAddresses(): Promise<Address[]> {
   return (await api.get('/users/me/addresses')).data;
 }

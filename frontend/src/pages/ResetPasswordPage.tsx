@@ -5,8 +5,11 @@ import { resetPassword } from '../api/auth';
 import { toApiError } from '../api/errors';
 import Field from '../components/Field';
 import { Errors, hasErrors, PASSWORD_MAX, PASSWORD_MIN, validateReset } from '../validation/authRules';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 export default function ResetPasswordPage() {
+  usePageMeta(...PAGE_META.reset);
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
   const [values, setValues] = useState({ password: '', confirmPassword: '' });

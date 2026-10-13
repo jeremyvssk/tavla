@@ -1,6 +1,7 @@
 // Application service for user persistence and lookups.
 package com.iloveshopping.user;
 
+import com.iloveshopping.crypto.BlindIndex;
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
 import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
@@ -10,15 +11,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.util.Collection;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final BlindIndex blindIndex;
 
     /**
      * A throwaway hash, encoded once at startup so it carries the encoder's real cost. Compared
@@ -27,26 +32,27 @@ public class UserService {
      */
     private final String dummyHash;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, BlindIndex blindIndex) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.blindIndex = blindIndex;
         this.dummyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     /**
      * Creates a LOCAL user. The password is NFC-normalized before BCrypt so that
      * accented characters hash consistently across register and login.
-     * The existsByEmail pre-check gives a friendly error; the DataIntegrityViolation
+     * The existsByEmailHash pre-check gives a friendly error; the DataIntegrityViolation
      * catch closes the TOCTOU race against the DB UNIQUE constraint.
      */
     @Transactional
     public User createLocalUser(String email, String rawPassword, String fullName) {
         String normalizedEmail = normalizeEmail(email);
-        if (userRepository.existsByEmail(normalizedEmail)) {
+        if (userRepository.existsByEmailHash(emailHash(normalizedEmail))) {
             throw new EmailAlreadyExistsException();
         }
         User user = new User();
-        user.setEmail(normalizedEmail);
+        setEmail(user, normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(normalizePassword(rawPassword)));
         user.setFullName(fullName);
         try {
@@ -69,11 +75,11 @@ public class UserService {
 
     private User createOAuthUser(OAuthUserInfo info) {
         String normalizedEmail = normalizeEmail(info.email());
-        if (userRepository.existsByEmail(normalizedEmail)) {
+        if (userRepository.existsByEmailHash(emailHash(normalizedEmail))) {
             throw new EmailRegisteredWithPasswordException();
         }
         User user = new User();
-        user.setEmail(normalizedEmail);
+        setEmail(user, normalizedEmail);
         user.setFullName(info.fullName());
         user.setAvatarUrl(info.avatarUrl());
         user.setAuthProvider(info.provider());
@@ -94,7 +100,38 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public Optional<User> findByEmail(String email) {
-        return userRepository.findByEmail(normalizeEmail(email));
+        return userRepository.findByEmailHash(emailHash(email));
+    }
+
+    /** The blind index of an email, as stored in users.email_hash; for lookups by the whole address. */
+    public String emailHash(String email) {
+        return blindIndex.of(normalizeEmail(email));
+    }
+
+    // The email and its hash always change together, or sign-in stops finding the account.
+    private void setEmail(User user, String normalizedEmail) {
+        user.setEmail(normalizedEmail);
+        user.setEmailHash(blindIndex.of(normalizedEmail));
+    }
+
+    /** Staff who could still sign in without a second factor; the overview asks admins to chase them. */
+    @Transactional(readOnly = true)
+    public long staffWithoutTwoFactor() {
+        return userRepository.countStaffWithoutTwoFactor();
+    }
+
+    /** Names by id, for pages that store only who did something (the audit log); missing ids are left out. */
+    @Transactional(readOnly = true)
+    public Map<UUID, String> namesOf(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findByIdIn(ids).stream().collect(Collectors.toMap(User::getId, User::getFullName));
+    }
+
+    @Transactional
+    public void recordSignIn(UUID userId) {
+        userRepository.touchSignIn(userId);
     }
 
     /**

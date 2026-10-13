@@ -14,12 +14,15 @@ public record OrderTotals(BigDecimal subtotal, BigDecimal shipping, BigDecimal t
     /** Estonia's standard rate since July 2025. */
     static final BigDecimal VAT_RATE = new BigDecimal("0.24");
 
-    public static OrderTotals of(Collection<BigDecimal> lineTotals, ShippingMethod method) {
-        BigDecimal subtotal = lineTotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.UNNECESSARY);
-        BigDecimal shipping = method.costFor(subtotal);
+    /** {@code shipping} is the delivery option's cost on this subtotal (delivery/DeliveryService.quote). */
+    public static OrderTotals of(BigDecimal subtotal, BigDecimal shipping) {
         BigDecimal total = subtotal.add(shipping);
         BigDecimal vat = total.multiply(VAT_RATE).divide(BigDecimal.ONE.add(VAT_RATE), 2, RoundingMode.HALF_UP);
         return new OrderTotals(subtotal, shipping, total, vat);
+    }
+
+    public static BigDecimal subtotal(Collection<BigDecimal> lineTotals) {
+        return lineTotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2, RoundingMode.UNNECESSARY);
     }
 
     public static BigDecimal lineTotal(BigDecimal unitPrice, int quantity) {

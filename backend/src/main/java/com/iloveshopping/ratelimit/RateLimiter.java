@@ -1,6 +1,7 @@
-// Fixed-window request counters in Redis, shared by every backend instance.
+// Token buckets in Redis, shared by every backend instance: bursts are allowed, the average is held.
 package com.iloveshopping.ratelimit;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
@@ -10,39 +11,71 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Fixed window rather than a sliding window or token bucket: one counter per key, one Lua call per
- * request. The known cost is a burst of up to twice the limit across a window boundary, which is
- * harmless at these limits. Keys live under {@code rate_limit:} with the window as their TTL.
+ * Each key is a bucket holding up to {@code capacity} tokens that refills evenly, {@code capacity} tokens per
+ * {@code refillPeriod}. A request takes one token; an empty bucket answers 429. A fixed window (what this
+ * replaced) lets twice the limit through across a window edge; a bucket has no edge to aim at.
+ *
+ * <p>The refill is lazy: the hash stores the tokens and the time they were counted, and each call adds what
+ * the elapsed time earned before taking one. Read, refill, take and write are one Lua script, so two
+ * requests can never both spend the last token, and the clock is Redis's own TIME, so instances whose
+ * clocks disagree still share one timeline.
  */
 @Service
 public class RateLimiter {
 
-    private static final String KEY_PREFIX = "rate_limit:";
+    private static final String KEY_PREFIX = "rate_bucket:";
 
-    // INCR and EXPIRE in one script. As two calls, a failure between them leaves a counter with no
-    // TTL, and that key stays over its limit forever. PTTL < 0 also repairs such a key if one exists.
+    // ARGV: capacity, refill rate in tokens per millisecond. Returns {allowed (1/0), ms until a token}.
+    // The key expires once a full refill has passed: an idle bucket is full anyway, so it costs no memory.
     @SuppressWarnings("rawtypes")
-    private static final RedisScript<List> HIT_SCRIPT = new DefaultRedisScript<>("""
-            local count = redis.call('INCR', KEYS[1])
-            if redis.call('PTTL', KEYS[1]) < 0 then
-                redis.call('PEXPIRE', KEYS[1], ARGV[1])
+    private static final RedisScript<List> TAKE_SCRIPT = new DefaultRedisScript<>("""
+            local capacity = tonumber(ARGV[1])
+            local rate = tonumber(ARGV[2])
+            local time = redis.call('TIME')
+            local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+            local state = redis.call('HMGET', KEYS[1], 'tokens', 'at')
+            local tokens = tonumber(state[1])
+            local at = tonumber(state[2])
+            if tokens == nil or at == nil then
+                tokens = capacity
+                at = now
             end
-            return {count, redis.call('PTTL', KEYS[1])}
+            tokens = math.min(capacity, tokens + math.max(0, now - at) * rate)
+            local allowed = 0
+            local wait = 0
+            if tokens >= 1 then
+                tokens = tokens - 1
+                allowed = 1
+            else
+                wait = math.ceil((1 - tokens) / rate)
+            end
+            redis.call('HSET', KEYS[1], 'tokens', tostring(tokens), 'at', tostring(now))
+            redis.call('PEXPIRE', KEYS[1], math.ceil(capacity / rate))
+            return {allowed, wait}
             """, List.class);
 
     private final StringRedisTemplate redis;
+    private final int multiplier;
 
-    public RateLimiter(StringRedisTemplate redis) {
+    public RateLimiter(StringRedisTemplate redis, @Value("${app.rate-limit.multiplier:1}") int multiplier) {
         this.redis = redis;
+        // Only the load test's stack raises this (k6's virtual users all share one address); see loadtest/.
+        this.multiplier = Math.max(1, multiplier);
     }
 
-    /** Counts one hit against the key and reports whether it is still within the limit. */
-    public Result hit(String key, int limit, Duration window) {
-        List<?> reply = redis.execute(HIT_SCRIPT, List.of(KEY_PREFIX + key), String.valueOf(window.toMillis()));
-        long count = ((Number) reply.get(0)).longValue();
-        long ttlMillis = ((Number) reply.get(1)).longValue();
-        // Rounded up, so a client that waits exactly Retry-After seconds never lands a moment early.
-        return new Result(count <= limit, Math.max(1, (ttlMillis + 999) / 1000));
+    /**
+     * Takes one token from the key's bucket. The bucket holds {@code capacity} tokens and earns them back
+     * evenly over {@code refillPeriod}: capacity 10 over a minute is a burst of 10, then one every 6 seconds.
+     */
+    public Result hit(String key, int capacity, Duration refillPeriod) {
+        int scaled = capacity * multiplier;
+        double perMilli = (double) scaled / refillPeriod.toMillis();
+        List<?> reply = redis.execute(TAKE_SCRIPT, List.of(KEY_PREFIX + key),
+                String.valueOf(scaled), String.valueOf(perMilli));
+        boolean allowed = ((Number) reply.get(0)).longValue() == 1;
+        long waitMillis = ((Number) reply.get(1)).longValue();
+        // Rounded up, so a client that waits exactly Retry-After seconds finds a token waiting.
+        return new Result(allowed, Math.max(1, (waitMillis + 999) / 1000));
     }
 
     public void reset(String key) {

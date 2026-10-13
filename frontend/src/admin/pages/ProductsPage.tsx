@@ -10,7 +10,7 @@ import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
 import Photo from '../../components/Photo';
 import { formatPrice } from '../../lib/format';
-import { AdminHead, LoadState, RowMenu, saveBlob, TableFoot } from '../parts';
+import { AdminHead, LoadState, RowMenu, saveBlob, TableFoot, useConfirm } from '../parts';
 
 const TABS: [ProductState, string][] = [['all', 'All'], ['active', 'Active'], ['hidden', 'Hidden'], ['out', 'Out of stock'], ['low', 'Low stock'], ['archived', 'Archived']];
 type Sort = NonNullable<StaffProductParams['sort']>;
@@ -27,6 +27,7 @@ function flatten(nodes: CategoryNode[], depth = 0): { id: number; slug: string; 
 }
 
 export default function ProductsPage() {
+  const [ask, confirmDialog] = useConfirm();
   const [url, setUrl] = useSearchParams();
   const client = useQueryClient();
   const q = url.get('q') ?? '';
@@ -75,6 +76,14 @@ export default function ProductsPage() {
     },
     onSuccess: (n) => done(`${n} ${n === 1 ? 'product' : 'products'} taken out of the shop. Ones in past orders are archived; the rest are deleted.`),
   });
+  async function askArchive(ids: string[], what: string) {
+    const yes = await ask({
+      title: `Take ${what} out of the shop?`,
+      body: <p>A product in past orders is archived, so those orders keep their link to it, and you can show it again later. One never ordered is deleted for good.</p>,
+      action: 'Archive', danger: true,
+    });
+    if (yes) archive.mutate(ids);
+  }
   const bulk = useMutation({
     mutationFn: ({ ids, change }: { ids: string[]; change: BulkProductChange }) => bulkProducts(ids, change),
     onSuccess: ({ changed }) => done(`${changed} ${changed === 1 ? 'product' : 'products'} changed.`),
@@ -192,10 +201,10 @@ export default function ProductsPage() {
                       <RowMenu label={`More for ${p.name}`} items={[
                         { label: 'Edit', icon: 'pencil', to: `/admin/products/${p.id}` },
                         { label: 'See it in the shop', icon: 'arrow', to: `/catalog/${p.id}`, newTab: true },
-                        p.state === 'HIDDEN'
+                        p.state !== 'ACTIVE'
                           ? { label: 'Show in the shop', icon: 'eye', onSelect: () => bulk.mutate({ ids: [p.id], change: { action: 'show' } }) }
                           : { label: 'Hide from the shop', icon: 'eye', onSelect: () => bulk.mutate({ ids: [p.id], change: { action: 'hide' } }) },
-                        { label: 'Archive', icon: 'trash', danger: true, onSelect: () => confirm(`Take ${p.name} out of the shop?`) && archive.mutate([p.id]) },
+                        ...(p.state === 'ARCHIVED' ? [] : [{ label: 'Archive', icon: 'trash' as const, danger: true, onSelect: () => askArchive([p.id], p.name) }]),
                       ]} />
                     </td>
                   </tr>
@@ -207,12 +216,13 @@ export default function ProductsPage() {
         {picked.size > 0 && (
           <BulkBar count={picked.size} shelves={shelves} busy={bulk.isPending || archive.isPending} onClear={() => setPicked(new Set())}
             onChange={(change) => bulk.mutate({ ids: [...picked], change })}
-            onArchive={() => confirm(`Take ${picked.size} ${picked.size === 1 ? 'product' : 'products'} out of the shop?`) && archive.mutate([...picked])} />
+            onArchive={() => askArchive([...picked], `${picked.size} ${picked.size === 1 ? 'product' : 'products'}`)} />
         )}
         {list.data && total > 0 && (
           <TableFoot page={page} size={list.data.size} total={total} note={`sorted by ${SORT_NAMES[sort] ?? sort}`} onPage={(p) => set({ page: String(p) })} />
         )}
       </section>
+      {confirmDialog}
     </main>
   );
 }

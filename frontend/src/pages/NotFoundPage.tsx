@@ -6,6 +6,7 @@ import { searchProducts } from '../api/catalog';
 import Icon from '../components/Icon';
 import ProductCard from '../components/ProductCard';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 /** "/catalog/staunton-no-7" -> "staunton no 7": the last part of the address, as words. */
 function wordsOf(path: string) {
@@ -14,7 +15,7 @@ function wordsOf(path: string) {
 }
 
 export default function NotFoundPage() {
-  usePageMeta('Page not found', 'This page does not exist on Tavla. Search the shop, or go to chess, Go or backgammon equipment.');
+  usePageMeta(...PAGE_META.notFound);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const guess = wordsOf(pathname);

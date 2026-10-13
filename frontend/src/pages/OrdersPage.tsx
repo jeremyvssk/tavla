@@ -8,6 +8,8 @@ import { AccountTabs, formatDay, StatusPill } from '../components/OrderParts';
 import Photo from '../components/Photo';
 import { formatPrice } from '../lib/format';
 import { STATUS_GROUPS } from '../lib/orderStatus';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 const BATCH = 10;
 
@@ -34,6 +36,7 @@ function ranges(now = new Date()) {
 }
 
 export default function OrdersPage() {
+  usePageMeta(...PAGE_META.orders);
   const [url, setUrl] = useSearchParams();
   const status = (url.get('status') as StatusGroup | null) ?? 'all';
   const sort = (url.get('sort') as OrderSort | null) ?? 'newest';

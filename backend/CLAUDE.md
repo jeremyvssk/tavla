@@ -51,7 +51,7 @@ Postgres, Redis and MailHog are **attached resources** identified by URL. The au
 storage map — don't blur these:
 
 - **Postgres** → durable user/product data
-- **Redis** → refresh tokens, JTI blocklist, pending 2FA challenges, password-reset tokens
+- **Redis** → refresh tokens, JTI blocklist and revocation cut-offs, pending 2FA challenges, password-reset tokens
 - **Filesystem** (Docker volume `product_images_data`) → image bytes, written by the backend,
   served by nginx. Path/URL stored in the DB. Keep access behind a `StorageService` interface so
   S3 can replace it.
@@ -72,14 +72,16 @@ storage map — don't blur these:
 ## 6. Security invariants
 
 - **Access tokens are validated by signature math only** — never stored or looked up — plus one
-  Redis JTI blocklist check per request.
+  Redis round trip per request (one MGET): the JTI blocklist and the user's revocation cut-off
+  (`tokens_revoked_before:{userId}`, set when a role changes or the account is deleted).
 - **Refresh rotation is a single Redis Lua script** (atomic read-old → delete → write-new). Never
   three separate Redis calls; that race is invisible to tests.
 - **Password reset revokes ALL refresh tokens** for the user, via `refresh_tokens_user:{userId}`.
 - **2FA pending state is a Redis key** with a 5-minute TTL. Real JWTs only after TOTP verify.
 - **A JWT proves identity; the service and DB prove ownership.** A valid token for user A must
   never touch user B's data.
-- **No PII in the JWT payload.** `sub`, `role`, `iat`, `exp`, `jti` — nothing else.
+- **No PII in the JWT payload.** `sub`, `role`, `iat`, `exp`, `jti`, and `mfa` (true when this session gave a
+  second factor; every staff area needs it, `auth/StaffArea`) — nothing else.
 - **Never bind a request body to a JPA entity.** Always a DTO that whitelists writable fields.
 - **Parameterised queries always**, including `ORDER BY` (allowlist the sort key).
 

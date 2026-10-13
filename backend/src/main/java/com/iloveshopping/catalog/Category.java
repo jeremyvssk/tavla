@@ -32,4 +32,8 @@ public class Category {
 
     @Column
     private Boolean active = true;
+
+    // Order among siblings, set by staff dragging shelves; ties fall back to the name.
+    @Column(nullable = false)
+    private int position;
 }

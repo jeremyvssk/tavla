@@ -112,6 +112,22 @@ public class PaymentService {
         return status;
     }
 
+    /**
+     * Gives part of the order's payment back. Outside any transaction, like every Stripe call. Throws
+     * {@link PaymentUnavailableException} when Stripe can't be reached or there is no paid payment.
+     */
+    public PaymentGateway.RefundStatus refundPart(UUID orderId, UUID refundId, BigDecimal amount) {
+        Payment payment = payments.findByOrderId(orderId).filter(p -> p.getStatus() == PaymentStatus.SUCCEEDED)
+                .orElseThrow(() -> new PaymentUnavailableException("order " + orderId + " has no paid payment to refund", null));
+        return gateway.refundPart(payment.getProviderPaymentId(), refundId, cents(amount));
+    }
+
+    /** Cancelled orders whose whole refund Stripe hasn't confirmed for at least {@code age}: the staff's "refund pending" list. */
+    @Transactional(readOnly = true)
+    public List<UUID> unconfirmedRefunds(Duration age) {
+        return payments.findUnconfirmedRefunds(age.toSeconds());
+    }
+
     /** Orders whose refund Stripe hasn't accepted for at least {@code age}, oldest first. */
     public List<UUID> refundsDue(Duration age, int limit) {
         return payments.findRefundsDue(age.toSeconds(), limit);
@@ -221,7 +237,8 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public Optional<PaymentSummary> summary(UUID orderId) {
         return payments.findByOrderId(orderId).map(p -> new PaymentSummary(p.getStatus(), brandName(p.getCardBrand()),
-                p.getCardLast4(), p.getStatus() == PaymentStatus.FAILED ? PaymentFailures.describe(p.getFailureCode()) : null));
+                p.getCardLast4(), p.getStatus() == PaymentStatus.FAILED ? PaymentFailures.describe(p.getFailureCode()) : null,
+                p.getProviderPaymentId()));
     }
 
     /** Whole cents, so €155.00 is 15500. Throws rather than round away a fraction of a cent. */

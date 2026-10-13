@@ -7,6 +7,7 @@ import Icon from '../components/Icon';
 import Photo from '../components/Photo';
 import ProductRow from '../components/ProductRow';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 // [category, title, subtitle, button, photo, width, height, focal point]
 const GAMES = [
@@ -76,8 +77,7 @@ function pickFeatured(pool: ProductSummary[]) {
 }
 
 export default function HomePage() {
-  usePageMeta('Tavla · Chess, Go and Backgammon equipment',
-    'Chess sets, boards, pieces and clocks, Go stones and boards, backgammon cases. Real stock counts, free shipping over €100 and 30-day returns.');
+  usePageMeta(...PAGE_META.home);
   const [tab, setTab] = useState<Tab>('top');
   const sources = useQueries({
     queries: FEATURED_SOURCES.map((category) => ({

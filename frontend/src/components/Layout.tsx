@@ -12,6 +12,7 @@ import CartPanel from './CartPanel';
 import Icon, { IconName, Perks } from './Icon';
 import MiniCart from './MiniCart';
 import SearchBox from './SearchBox';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 /** Where the footer and the About page send people; [placeholders] until the shop has its own accounts. */
 export const SOCIAL: { name: string; icon: IconName; href: string }[] = [
@@ -48,6 +49,8 @@ export default function Layout() {
   const [params] = useSearchParams();
   const { data: tree = [] } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories, staleTime: 5 * 60_000 });
   const [menu, setMenu] = useState(false);
+  const drawer = useRef<HTMLDivElement>(null);
+  useFocusTrap(drawer, menu);
   const shell = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLElement>(null);
   const ann = useRef<HTMLDivElement>(null);
@@ -181,7 +184,7 @@ export default function Layout() {
       {user && <p className="vh">Signed in as {user.email}</p>}
 
       <div className="t-scrim" data-on={menu ? '' : undefined} onClick={() => setMenu(false)} />
-      <div className="t-drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Menu" data-on={menu ? '' : undefined}>
+      <div ref={drawer} className="t-drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Menu" data-on={menu ? '' : undefined}>
         <div className="dh">
           <Link className="t-logo" to="/">Tavla</Link>
           <button type="button" aria-label="Close menu" onClick={() => setMenu(false)}><Icon name="close" width={2} /></button>

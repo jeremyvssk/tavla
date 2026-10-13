@@ -1,0 +1,11 @@
+sku,name,description,price,stock,category,brand,ean,weight_kg,width_cm,height_cm,depth_cm,variant_group,variant,image_url,image_alt
+EX-BAD-OK,This row is fine,,10.00,1,wooden-boards,,,,,,,,,,
+EX-BAD-SHELF,Unknown category,,10.00,1,no-such-category,,,,,,,,,,
+EX-BAD-PRICE,Price with a currency sign,,12€,1,wooden-boards,,,,,,,,,,
+EX-BAD-NEG,Negative price,,-5.00,1,wooden-boards,,,,,,,,,,
+ex-bad-ok,Same SKU as line 2 in other case,,10.00,1,wooden-boards,,,,,,,,,,
+EX-BAD-FORMULA,=HYPERLINK("http://evil.example"),,10.00,1,wooden-boards,,,,,,,,,,
+EX-BAD-NONAME,,,10.00,1,wooden-boards,,,,,,,,,,
+EX-BAD-HTTP,Plain http photo,,10.00,1,wooden-boards,,,,,,,,,http://cdn.example.com/x.jpg,
+EX-BAD-BRAND,Unknown brand,,10.00,1,wooden-boards,nobody-makes-this,,,,,,,,,
+EX-BAD-STOCK,Stock is not a whole number,,10.00,2.5,wooden-boards,,,,,,,,,,

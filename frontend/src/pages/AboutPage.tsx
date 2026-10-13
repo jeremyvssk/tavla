@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Icon from '../components/Icon';
 import { SOCIAL } from '../components/Layout';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 const NUMBERS = [
   ['1,772', 'products, each with real photos and a real stock count'],
@@ -25,8 +26,7 @@ const TEAM = [
 ];
 
 export default function AboutPage() {
-  usePageMeta('About Tavla: chess, Go and backgammon',
-    'Tavla sells chess sets, Go boards and stones, backgammon cases and clocks from three suppliers. Who we are, how we choose what we stock, and how to reach us.');
+  usePageMeta(...PAGE_META.about);
   return (
     <div className="wrap about2">
       <section className="ab2-hero" aria-labelledby="ab-h">

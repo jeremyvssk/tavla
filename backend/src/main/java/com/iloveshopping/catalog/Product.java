@@ -34,6 +34,10 @@ public class Product {
     @Column(nullable = false)
     private String name;
 
+    // The shop's own article code; unique ignoring case (uq_products_sku). Bulk uploads match rows on it.
+    @Column(length = 64)
+    private String sku;
+
     @Column
     private String description;
 
@@ -64,6 +68,11 @@ public class Product {
 
     @Column(nullable = false)
     private boolean active = true;
+
+    // Set when a product that past orders point at is "deleted": it leaves the shop and the staff's everyday
+    // list, but its row stays. Archived implies not active (ck_products_archived_hidden).
+    @Column(name = "archived_at")
+    private Instant archivedAt;
 
     // Metric is the source of truth; the imperial columns are derived from it on every write.
     @Column(name = "weight_kg")

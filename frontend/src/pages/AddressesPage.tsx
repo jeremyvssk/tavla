@@ -10,11 +10,12 @@ import { useAppSelector } from '../store';
 import type { Errors } from '../validation/authRules';
 import { ADDRESS_LIMIT, AddressField, AddressForm, validateAddress } from '../validation/addressRules';
 import { COUNTRIES, CountryCode } from '../validation/checkoutRules';
+import { PAGE_META } from '../content/pageMeta';
 
 const countryName = (code: string) => COUNTRIES.find((c) => c.code === code)?.name ?? code;
 
 export default function AddressesPage() {
-  usePageMeta('Your addresses', 'Save delivery and billing addresses to your Tavla account and pick one at checkout instead of typing it.');
+  usePageMeta(...PAGE_META.addresses);
   const user = useAppSelector((s) => s.auth.user)!;
   const client = useQueryClient();
   const key = ['addresses', user.id];

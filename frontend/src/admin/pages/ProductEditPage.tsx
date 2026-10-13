@@ -2,16 +2,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { createProduct, deleteImage, deleteProduct, fetchBrands, ProductInput, saveProduct, uploadImage } from '../../api/admin';
-import { CategoryNode, fetchCategories, fetchProduct, ProductDetail } from '../../api/catalog';
+import { createProduct, deleteImage, deleteProduct, fetchBrands, fetchStaffProduct, ProductInput, saveProduct, uploadImage } from '../../api/admin';
+import { CategoryNode, fetchCategories, ProductDetail } from '../../api/catalog';
 import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
 import Photo from '../../components/Photo';
-import { AdminHead } from '../parts';
+import { AdminHead, useConfirm } from '../parts';
 
 // attribute keys this page edits through its own fields; every other key is a row under "Details"
-const OWN = ['supplier_sku', 'ean', 'variant_group', 'variant', 'seo_title', 'seo_description'];
+const OWN = ['ean', 'variant_group', 'variant', 'seo_title', 'seo_description'];
 export const TITLE_MAX = 60;
+// the backend's Skus.PATTERN: no space at either end, where a spreadsheet would hide it
+const SKU = /^[A-Za-z0-9](?:[A-Za-z0-9 ._/-]{0,62}[A-Za-z0-9])?$/;
 export const META_MAX = 160;
 
 interface Form {
@@ -47,9 +49,8 @@ function fromProduct(p: ProductDetail): Form {
   const num = (v: number | null) => (v === null ? '' : String(v));
   return {
     name: p.name, description: p.description ?? '', price: p.price.toFixed(2), stock: String(p.stockQuantity),
-    sku: str(a.supplier_sku), ean: str(a.ean), categoryId: String(p.category.id), brandId: p.brand ? String(p.brand.id) : '',
-    // PLANNED: the product API doesn't send `active` yet, so a hidden product reads as shown here
-    active: true, weightKg: num(p.measurements.weightKg), widthCm: num(p.measurements.widthCm),
+    sku: p.sku ?? '', ean: str(a.ean), categoryId: String(p.category.id), brandId: p.brand ? String(p.brand.id) : '',
+    active: p.active, weightKg: num(p.measurements.weightKg), widthCm: num(p.measurements.widthCm),
     heightCm: num(p.measurements.heightCm), depthCm: num(p.measurements.depthCm),
     details: Object.entries(a).filter(([k]) => !OWN.includes(k)).map(([key, value]) => ({ key, value: str(value), raw: value })),
     group: str(a.variant_group),
@@ -69,6 +70,7 @@ function validate(f: Form): Errors {
   if (!f.price.trim() || !/^\d+([.,]\d{1,2})?$/.test(f.price.trim())) e.price = 'A price like 97.00, with at most two decimals.';
   if (!/^\d+$/.test(f.stock.trim())) e.stock = 'A whole number, 0 or more.';
   if (!f.categoryId) e.categoryId = 'Choose where it lives in the shop.';
+  if (f.sku.trim() && !SKU.test(f.sku.trim())) e.sku = 'Letters, digits, spaces and . _ / - only, starting and ending with a letter or digit.';
   if (f.ean.trim() && !/^\d{8}(\d{5})?$/.test(f.ean.trim())) e.ean = 'An EAN is 8 or 13 digits.';
   for (const k of ['weightKg', 'widthCm', 'heightCm', 'depthCm'] as const) {
     if (f[k].trim() && !(n(f[k]) > 0)) e[k] = 'A number above 0, or leave it empty.';
@@ -84,7 +86,6 @@ function toInput(f: Form): ProductInput {
   const n = (s: string) => (s.trim() ? Number(s.replace(',', '.')) : null);
   const same = (d: Form['details'][number]) => d.raw !== undefined && d.value === (typeof d.raw === 'object' ? JSON.stringify(d.raw) : String(d.raw));
   const attributes: Record<string, unknown> = Object.fromEntries(f.details.filter((d) => d.key.trim()).map((d) => [d.key.trim(), same(d) ? d.raw : d.value.trim()]));
-  if (f.sku.trim()) attributes.supplier_sku = f.sku.trim();
   if (f.ean.trim()) attributes.ean = f.ean.trim();
   if (f.group.trim()) attributes.variant_group = f.group.trim();
   if (f.variant.trim()) attributes.variant = Object.fromEntries(f.variant.split(',').map((p) => p.split(':').map((x) => x.trim())));
@@ -94,7 +95,7 @@ function toInput(f: Form): ProductInput {
     name: f.name.trim(), description: f.description.trim() || null, price: Number(f.price.replace(',', '.')),
     stockQuantity: Number(f.stock), categoryId: Number(f.categoryId), brandId: f.brandId ? Number(f.brandId) : null,
     attributes: Object.keys(attributes).length ? attributes : null, active: f.active,
-    weightKg: n(f.weightKg), widthCm: n(f.widthCm), heightCm: n(f.heightCm), depthCm: n(f.depthCm),
+    weightKg: n(f.weightKg), widthCm: n(f.widthCm), heightCm: n(f.heightCm), depthCm: n(f.depthCm), sku: f.sku.trim() || null,
   };
 }
 
@@ -103,11 +104,13 @@ function flatten(nodes: CategoryNode[], depth = 0): { id: number; name: string; 
 }
 
 export default function ProductEditPage() {
+  const [ask, confirmDialog] = useConfirm();
   const { id } = useParams();
   const isNew = !id;
   const navigate = useNavigate();
   const client = useQueryClient();
-  const product = useQuery({ queryKey: ['product', id], queryFn: () => fetchProduct(id!), enabled: !isNew });
+  // the staff's read: hidden and archived products too, kept apart from the shop's ['product', id] cache
+  const product = useQuery({ queryKey: ['staff', 'product', id], queryFn: () => fetchStaffProduct(id!), enabled: !isNew });
   const { data: tree = [] } = useQuery({ queryKey: ['categories'], queryFn: fetchCategories, staleTime: 5 * 60_000 });
   const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: fetchBrands, staleTime: 5 * 60_000 });
   const [form, setForm] = useState<Form>(EMPTY);
@@ -127,6 +130,7 @@ export default function ProductEditPage() {
   const save = useMutation({
     mutationFn: () => (isNew ? createProduct(toInput(form)) : saveProduct(id!, toInput(form))),
     onSuccess: (r: { id: string }) => {
+      client.invalidateQueries({ queryKey: ['staff', 'product', id ?? r.id] });
       client.invalidateQueries({ queryKey: ['product', id ?? r.id] });
       client.invalidateQueries({ queryKey: ['admin-products'] });
       setSaid(isNew ? 'Product added. Add its photos next.' : 'Saved. The shop shows the change now.');
@@ -256,7 +260,7 @@ export default function ProductEditPage() {
                 <div className="grid3">
                   {input('price', 'Price', { inputMode: 'decimal' }, 'EUR')}
                   {input('stock', 'In stock', { inputMode: 'numeric' }, 'pcs')}
-                  {input('sku', 'SKU', { maxLength: 60 })}
+                  {input('sku', 'SKU', { maxLength: 64 })}
                 </div>
                 <div className="grid3">{input('ean', 'EAN', { inputMode: 'numeric', maxLength: 13 })}</div>
                 <p className="hint">The price includes VAT. Stock goes down when an order is placed and back up when one is cancelled.</p>
@@ -385,7 +389,7 @@ export default function ProductEditPage() {
                 <div className="sec-in">
                   <p className="hint">Takes it out of the shop and search. A product in past orders is archived, so those orders keep their copy; one never ordered is deleted.</p>
                   <button type="button" className="btn btn--line-danger" disabled={remove.isPending}
-                    onClick={() => confirm(`Take “${form.name}” out of the shop?`) && remove.mutate()}>
+                    onClick={async () => (await ask({ title: `Take “${form.name}” out of the shop?`, action: 'Archive product', danger: true })) && remove.mutate()}>
                     {remove.isPending ? 'Working…' : 'Archive product'}
                   </button>
                   {remove.error && <p className="err" role="alert"><Icon name="alert" width={2} />{toApiError(remove.error).message}</p>}
@@ -394,6 +398,7 @@ export default function ProductEditPage() {
             )}
           </div>
         </div>
+      {confirmDialog}
       </main>
     </form>
   );

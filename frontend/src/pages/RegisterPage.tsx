@@ -8,10 +8,13 @@ import Field from '../components/Field';
 import Recaptcha, { RECAPTCHA_SITE_KEY } from '../components/Recaptcha';
 import { useAppDispatch } from '../store';
 import { Errors, hasErrors, PASSWORD_MAX, PASSWORD_MIN, validateRegister } from '../validation/authRules';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { PAGE_META } from '../content/pageMeta';
 
 type FieldName = 'email' | 'fullName' | 'password' | 'confirmPassword';
 
 export default function RegisterPage() {
+  usePageMeta(...PAGE_META.register);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [values, setValues] = useState({ email: '', fullName: '', password: '', confirmPassword: '' });

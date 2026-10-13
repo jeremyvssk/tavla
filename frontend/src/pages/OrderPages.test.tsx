@@ -24,14 +24,14 @@ const order: OrderDetail = {
   id: 'o1', number: 'TV-24817', placedAt: '2026-10-07T11:31:00Z', status: 'PAYMENT_SUCCESSFUL', itemCount: 2, total: 155,
   email: 'kadri.saar@example.com', phone: '+372 5123 4567',
   shipTo: { firstName: 'Kadri', lastName: 'Saar', street: 'Narva mnt 7', flat: '12', postcode: '10117', city: 'Tallinn', country: 'EE' },
-  shippingMethod: 'standard',
+  shippingMethod: 'standard', shippingName: 'Standard courier', deliveryDaysMin: 2, deliveryDaysMax: 4,
   lines: [
     { productId: 'p1', name: 'Beskid Chess Set', options: null, imageUrl: null, imageFraming: null, unitPrice: 90, quantity: 1, lineTotal: 90 },
     { productId: 'p2', name: 'DGT 3000', options: null, imageUrl: null, imageFraming: null, unitPrice: 65, quantity: 1, lineTotal: 65 },
   ],
   subtotal: 155, shippingCost: 0, vat: 30, cancellable: true,
-  payment: { brand: 'Visa', last4: '4242', paidAt: '2026-10-07T11:32:00Z' },
-  paymentFailure: null, holdUntil: null, tracking: null,
+  payment: { brand: 'Visa', last4: '4242', paidAt: '2026-10-07T11:32:00Z', reference: 'pi_3QxTest4242' },
+  paymentFailure: null, holdUntil: null, tracking: null, billTo: null,
   history: [
     { at: '2026-10-07T11:32:00Z', status: 'PAYMENT_SUCCESSFUL', note: 'Stripe confirmed the payment.' },
     { at: '2026-10-07T11:31:00Z', status: 'PENDING_PAYMENT', note: 'Order placed.' },

@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /** Written only by {@link Order#place} and {@link Order#moveTo}; never changed afterwards. */
 @Entity
@@ -42,6 +43,10 @@ public class OrderStatusChange {
     @Column(nullable = false)
     private OrderActor actor;
 
+    /** The staff member who made the move; null for the shopper, Stripe and the timer. */
+    @Column(name = "actor_user_id")
+    private UUID actorUserId;
+
     @Column
     private String note;
 
@@ -51,11 +56,13 @@ public class OrderStatusChange {
     protected OrderStatusChange() {
     }
 
-    OrderStatusChange(Order order, OrderStatus fromStatus, OrderStatus toStatus, OrderActor actor, String note, Instant createdAt) {
+    OrderStatusChange(Order order, OrderStatus fromStatus, OrderStatus toStatus, OrderActor actor, UUID actorUserId, String note,
+                      Instant createdAt) {
         this.order = order;
         this.fromStatus = fromStatus;
         this.toStatus = toStatus;
         this.actor = actor;
+        this.actorUserId = actorUserId;
         this.note = note;
         this.createdAt = createdAt;
     }

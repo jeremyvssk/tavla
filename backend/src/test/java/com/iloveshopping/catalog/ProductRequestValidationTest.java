@@ -73,6 +73,17 @@ class ProductRequestValidationTest {
         assertThat(violations(with(valid(), "attributes", tooMany))).containsExactly("attributes");
     }
 
+    @Test
+    void aSkuIsOptional_butHasNoInvisibleEdges() {
+        assertThat(violations(with(valid(), "sku", null))).isEmpty();
+        assertThat(violations(with(valid(), "sku", ""))).isEmpty();
+        assertThat(violations(with(valid(), "sku", "P101/E350-32_B.2"))).isEmpty();
+        assertThat(violations(with(valid(), "sku", " CH135"))).containsExactly("sku");
+        assertThat(violations(with(valid(), "sku", "CH135 "))).containsExactly("sku");
+        assertThat(violations(with(valid(), "sku", "=CMD()"))).containsExactly("sku");
+        assertThat(violations(with(valid(), "sku", "x".repeat(65)))).contains("sku");
+    }
+
     private Set<String> violations(ProductRequest request) {
         return validator.validate(request).stream()
                 .map(ConstraintViolation::getPropertyPath)
@@ -83,7 +94,7 @@ class ProductRequestValidationTest {
     private static ProductRequest valid() {
         return new ProductRequest("Walnut Board", "Solid walnut", new BigDecimal("149.00"), 3, 1, 2,
                 Map.of("wood", "walnut"), true,
-                new BigDecimal("2.5"), new BigDecimal("50"), new BigDecimal("2"), new BigDecimal("50"));
+                new BigDecimal("2.5"), new BigDecimal("50"), new BigDecimal("2"), new BigDecimal("50"), "CH135 BROWN");
     }
 
     /** Records are immutable, so copy one with a single component swapped. */
@@ -100,7 +111,8 @@ class ProductRequestValidationTest {
                 pick(field, "weightKg", value, r.weightKg()),
                 pick(field, "widthCm", value, r.widthCm()),
                 pick(field, "heightCm", value, r.heightCm()),
-                pick(field, "depthCm", value, r.depthCm()));
+                pick(field, "depthCm", value, r.depthCm()),
+                pick(field, "sku", value, r.sku()));
     }
 
     @SuppressWarnings("unchecked")

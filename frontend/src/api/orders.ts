@@ -21,10 +21,9 @@ export type OrderStatus =
 export type PlaceOrderRequest = Omit<CheckoutForm, 'flat'> & {
   flat: string | null;
   shippingMethod: ShippingMethod;
-  /**
-   * PLANNED: left out when it is the delivery address. The server doesn't accept it yet, and it refuses
-   * unknown fields (400 malformed_request), so a separate billing address fails until the backend adds it.
-   */
+  /** the total the page showed; when the server's differs, the order is refused with 409 price_changed */
+  expectedTotal?: number;
+  /** left out when the invoice goes to the delivery address; its postcode gets the delivery address's check */
   billingAddress?: BillingForm;
 };
 
@@ -56,7 +55,11 @@ export interface OrderDetail extends Omit<OrderSummary, 'preview'> {
   email: string;
   phone: string;
   shipTo: { firstName: string; lastName: string; street: string; flat: string | null; postcode: string; city: string; country: string };
+  /** the delivery option's id; its name and days below are as they were when the order was placed */
   shippingMethod: ShippingMethod;
+  shippingName: string;
+  deliveryDaysMin: number;
+  deliveryDaysMax: number;
   lines: OrderLine[];
   subtotal: number;
   shippingCost: number;
@@ -68,11 +71,11 @@ export interface OrderDetail extends Omit<OrderSummary, 'preview'> {
     brand: string;
     last4: string;
     paidAt: string;
-    /** PLANNED: Stripe's PaymentIntent id (pi_…), the reference a bank asks for; not sent yet */
-    reference?: string;
+    /** Stripe's PaymentIntent id (pi_…), the reference a bank asks for */
+    reference: string | null;
   } | null;
-  /** PLANNED: the invoice address when it differs from shipTo; not sent yet */
-  billTo?: { name: string; street: string; postcode: string; city: string; country: string } | null;
+  /** the invoice address when it differs from shipTo */
+  billTo: { name: string; street: string; postcode: string; city: string; country: string } | null;
   /** why the last payment attempt failed, in words the shopper can act on */
   paymentFailure: string | null;
   /** until when unpaid items stay reserved */

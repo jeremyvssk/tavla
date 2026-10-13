@@ -1,6 +1,7 @@
 // Central mapping of domain and validation exceptions to HTTP responses.
 package com.iloveshopping.exception;
 
+import com.iloveshopping.auth.exception.AccessConflictException;
 import com.iloveshopping.auth.exception.InvalidCaptchaException;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidOAuthTokenException;
@@ -14,16 +15,22 @@ import com.iloveshopping.cart.exception.NotEnoughStockException;
 import com.iloveshopping.cart.exception.RejectedTokenException;
 import com.iloveshopping.catalog.exception.CatalogConflictException;
 import com.iloveshopping.catalog.exception.CatalogNotFoundException;
+import com.iloveshopping.catalog.exception.ImportFileException;
 import com.iloveshopping.catalog.exception.InvalidImageException;
 import com.iloveshopping.catalog.exception.InvalidReferenceException;
 import com.iloveshopping.catalog.exception.NotReviewOwnerException;
+import com.iloveshopping.catalog.exception.PriceChangeTooLargeException;
+import com.iloveshopping.catalog.exception.ReviewNotAllowedException;
+import com.iloveshopping.delivery.exception.DeliveryNotFoundException;
 import com.iloveshopping.order.exception.OrderConflictException;
 import com.iloveshopping.order.exception.OrderNotFoundException;
 import com.iloveshopping.order.exception.OrderValidationException;
+import com.iloveshopping.order.exception.RefundLimitException;
 import com.iloveshopping.payment.exception.EventQueueUnavailableException;
 import com.iloveshopping.payment.exception.InvalidWebhookSignatureException;
 import com.iloveshopping.payment.exception.PaymentUnavailableException;
 import com.iloveshopping.ratelimit.RateLimitExceededException;
+import com.iloveshopping.user.exception.AddressNotFoundException;
 import com.iloveshopping.user.exception.EmailAlreadyExistsException;
 import com.iloveshopping.user.exception.EmailRegisteredWithPasswordException;
 import com.iloveshopping.user.exception.UserNotFoundException;
@@ -113,6 +120,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse("two_factor_already_enabled"));
     }
 
+    @ExceptionHandler(AccessConflictException.class)
+    public ResponseEntity<ErrorResponse> handleAccessConflict(AccessConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(e.getCode()));
+    }
+
     // Constraint annotations on @RequestParam / @PathVariable (e.g. @Size on the suggestion query).
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponse> handleMethodValidation(HandlerMethodValidationException e) {
@@ -138,9 +150,10 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("too_many_requests"));
     }
 
+    // Past the multipart limit (10 MB, for the bulk upload); a photo's own 5 MB limit is ProductImageService's.
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleUploadTooLarge(MaxUploadSizeExceededException e) {
-        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).body(new ErrorResponse("image_too_large"));
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE).body(new ErrorResponse("file_too_large"));
     }
 
     @ExceptionHandler(CatalogNotFoundException.class)
@@ -184,6 +197,47 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OrderValidationException.class)
     public ResponseEntity<ErrorResponse> handleOrderValidation(OrderValidationException e) {
         return ResponseEntity.badRequest().body(new ErrorResponse("validation_failed", e.getFields()));
+    }
+
+    // A rule across fields outside checkout (a bulk change's value for its action, a category moved under itself).
+    @ExceptionHandler(FieldValidationException.class)
+    public ResponseEntity<ErrorResponse> handleFieldValidation(FieldValidationException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("validation_failed", e.getFields()));
+    }
+
+    // A bulk upload that can't be read at all: not UTF-8, an unknown column, too many rows. The message names the fix.
+    @ExceptionHandler(ImportFileException.class)
+    public ResponseEntity<ErrorResponse> handleImportFile(ImportFileException e) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("invalid_import_file", Map.of("file", e.getMessage())));
+    }
+
+    @ExceptionHandler(DeliveryNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleDeliveryNotFound(DeliveryNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("delivery_option_not_found"));
+    }
+
+    // Support refunded past their limit on one order (order/StaffOrderService.SUPPORT_REFUND_LIMIT); an admin can.
+    @ExceptionHandler(RefundLimitException.class)
+    public ResponseEntity<ErrorResponse> handleRefundLimit(RefundLimitException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse("refund_limit"));
+    }
+
+    // No delivered order with the product yet (review_needs_delivery), or voting on one's own review (own_review).
+    @ExceptionHandler(ReviewNotAllowedException.class)
+    public ResponseEntity<ErrorResponse> handleReviewNotAllowed(ReviewNotAllowedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse(e.getCode()));
+    }
+
+    // Another account's address id answers exactly like one that doesn't exist.
+    @ExceptionHandler(AddressNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleAddressNotFound(AddressNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse("address_not_found"));
+    }
+
+    // Sales moved a price further than they may alone (catalog/PriceGuard.java); an admin can make the change.
+    @ExceptionHandler(PriceChangeTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handlePriceChangeTooLarge(PriceChangeTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new ErrorResponse("price_change_too_large"));
     }
 
     // Stripe unreachable or not configured. Logged where it happened; the client only learns to try again later.

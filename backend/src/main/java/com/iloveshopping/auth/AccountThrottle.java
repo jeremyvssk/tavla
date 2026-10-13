@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.UUID;
 
 /**
  * Per-IP limits (RateLimitFilter) miss a guesser spread over many addresses, so login is also
@@ -33,6 +34,8 @@ public class AccountThrottle {
     static final Duration LOGIN_PER_ACCOUNT_WINDOW = Duration.ofHours(1);
     static final int RESET_EMAILS_PER_ACCOUNT = 5;
     static final Duration RESET_EMAILS_WINDOW = Duration.ofHours(1);
+    static final int STEP_UP_CODES = 5;
+    static final Duration STEP_UP_WINDOW = Duration.ofMinutes(15);
 
     private final RateLimiter rateLimiter;
     private final boolean enabled;
@@ -79,6 +82,24 @@ public class AccountThrottle {
     public boolean allowResetEmail(String email) {
         return !enabled || rateLimiter.hit("reset_email:" + accountKey(email),
                 RESET_EMAILS_PER_ACCOUNT, RESET_EMAILS_WINDOW).allowed();
+    }
+
+    /**
+     * Counts one 2FA code typed to approve a change (a role change). Without a limit, a stolen session
+     * could walk the million codes against this endpoint the way it can't against the sign-in.
+     */
+    public void checkStepUp(UUID userId) {
+        if (!enabled) {
+            return;
+        }
+        RateLimiter.Result result = rateLimiter.hit("step_up:" + userId, STEP_UP_CODES, STEP_UP_WINDOW);
+        if (!result.allowed()) {
+            throw new RateLimitExceededException(result.retryAfterSeconds());
+        }
+    }
+
+    public void stepUpSucceeded(UUID userId) {
+        rateLimiter.reset("step_up:" + userId);
     }
 
     private static String accountKey(String email) {

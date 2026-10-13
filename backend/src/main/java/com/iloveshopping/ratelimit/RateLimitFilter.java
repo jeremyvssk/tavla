@@ -1,4 +1,4 @@
-// Per-IP request limits on the endpoints that are guessable or expensive, applied before authentication.
+// Per-IP token buckets, applied before authentication: a tight one per guessable or expensive endpoint, a wide one for the rest.
 package com.iloveshopping.ratelimit;
 
 import jakarta.servlet.FilterChain;
@@ -16,7 +16,9 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * The whole per-IP policy on one screen. Login and forgot-password are also limited per account,
+ * The whole per-IP policy on one screen. Each rule is a token bucket (RateLimiter): {@code limit} is the burst,
+ * and the bucket earns that many back evenly over {@code window}, so "10 per minute" is 10 at once, then
+ * one every 6 seconds. Login and forgot-password are also limited per account,
  * in AccountThrottle, because an IP limit alone misses a guesser spread over many addresses.
  *
  * <p>{@code getRemoteAddr()} is the real client only because Tomcat's RemoteIpValve replaces it
@@ -44,7 +46,19 @@ public class RateLimitFilter extends OncePerRequestFilter {
             new Rule("POST", "/cart/items", 60, Duration.ofMinutes(1)),
             // Every order holds its stock for half an hour, so a script placing orders it never pays
             // could empty the shelves. Ten in ten minutes is far above a person checking out.
-            new Rule("POST", "/orders", 10, Duration.ofMinutes(10)));
+            new Rule("POST", "/orders", 10, Duration.ofMinutes(10)),
+            // Each message is an email in the shop's inbox; a person writes a few, a script thousands.
+            new Rule("POST", "/support/messages", 5, Duration.ofMinutes(15)));
+
+    /**
+     * Every other request: a burst of 300, then 20 a second. A product page is about ten API calls (images
+     * come from nginx, not here), so a person never meets it, and several shoppers behind one office or
+     * phone-network address still fit. A script hammering any endpoint is held to 20 a second.
+     */
+    private static final Rule GENERAL = new Rule("*", "*", 300, Duration.ofSeconds(15));
+
+    // Stripe's events are signed and retried by Stripe; refusing one only delays a payment.
+    private static final String WEBHOOK = "/payments/webhook";
 
     private final RateLimiter rateLimiter;
     private final boolean enabled;
@@ -62,20 +76,26 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        for (Rule rule : RULES) {
-            if (rule.method().equals(request.getMethod()) && rule.path().equals(request.getRequestURI())) {
-                String key = "ip:" + rule.method() + rule.path() + ":" + request.getRemoteAddr();
-                RateLimiter.Result result = rateLimiter.hit(key, rule.limit(), rule.window());
-                if (!result.allowed()) {
-                    // Written here rather than thrown: a filter runs outside the controller advice.
-                    response.setStatus(429);
-                    response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(result.retryAfterSeconds()));
-                    response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-                    response.getWriter().write("{\"error\":\"too_many_requests\"}");
-                    return;
-                }
+        Rule rule = GENERAL;
+        for (Rule r : RULES) {
+            if (r.method().equals(request.getMethod()) && r.path().equals(request.getRequestURI())) {
+                rule = r;
                 break;
             }
+        }
+        if (rule == GENERAL && WEBHOOK.equals(request.getRequestURI())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+        String key = "ip:" + (rule == GENERAL ? "all" : rule.method() + rule.path()) + ":" + request.getRemoteAddr();
+        RateLimiter.Result result = rateLimiter.hit(key, rule.limit(), rule.window());
+        if (!result.allowed()) {
+            // Written here rather than thrown: a filter runs outside the controller advice.
+            response.setStatus(429);
+            response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(result.retryAfterSeconds()));
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.getWriter().write("{\"error\":\"too_many_requests\"}");
+            return;
         }
         filterChain.doFilter(request, response);
     }

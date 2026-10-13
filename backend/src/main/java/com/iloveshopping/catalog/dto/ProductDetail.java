@@ -10,11 +10,14 @@ import java.util.UUID;
 public record ProductDetail(
         UUID id,
         String name,
+        String sku,
         String description,
         BigDecimal price,
         int stockQuantity,
         boolean inStock,
         boolean active,
+        /** taken out of the shop for good; only staff ever see an archived product */
+        boolean archived,
         CategoryRef category,
         List<CategoryRef> breadcrumb,
         BrandResponse brand,

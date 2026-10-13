@@ -164,8 +164,9 @@ public class CartService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public void restoreLines(UUID userId, String guestTokenHash, List<OrderableLine> lines) {
+        // neither: the account that placed it was deleted (its orders stay, unlinked), so there is no cart to fill
         Optional<UUID> cartId = userId != null ? Optional.of(findOrCreate(CartOwner.user(userId)).id())
-                : carts.findByGuestTokenHash(guestTokenHash).map(Cart::getId);
+                : guestTokenHash == null ? Optional.empty() : carts.findByGuestTokenHash(guestTokenHash).map(Cart::getId);
         cartId.ifPresent(id -> {
             lines.forEach(line -> items.restoreLine(id, line.productId(), Math.min(line.quantity(), LINE_LIMIT)));
             carts.touch(id);

@@ -1,0 +1,16 @@
+# The load test's copy of the stack, layered on ../docker-compose.yml by run.sh under its own project name
+# (ils-load), so it has its own volumes and never touches the database you develop on.
+services:
+  backend:
+    environment:
+      # All of k6's virtual users arrive from one address, so every token bucket is 1000 times bigger here.
+      # The buckets still run (one Redis script per request), so their cost is in the numbers.
+      RATE_LIMIT_MULTIPLIER: "1000"
+      # payment/FakePaymentGateway instead of Stripe, whose test mode limits how fast it may be called
+      PAYMENTS_FAKE: "true"
+      # placed orders are never paid, so their stock comes back after two minutes instead of thirty
+      ORDER_PAYMENT_HOLD: PT2M
+    # A fixed, small box, so "CPU over 90%" means something and the numbers can be compared between runs:
+    # two cores and 1 GB, about a small cloud instance.
+    cpus: 2.0
+    mem_limit: 1g

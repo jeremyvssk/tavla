@@ -11,13 +11,14 @@ import { usePageMeta } from '../hooks/usePageMeta';
 import { useAppDispatch, useAppSelector } from '../store';
 import { NAME_MAX } from '../validation/authRules';
 import { validatePhone } from '../validation/checkoutRules';
+import { PAGE_META } from '../content/pageMeta';
 
 const month = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const initials = (name: string) => name.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
 export default function AccountPage() {
-  usePageMeta('Your profile', 'Your Tavla account: your name and phone, how you sign in, a copy of your data, and deleting your account.');
+  usePageMeta(...PAGE_META.account);
   const user = useAppSelector((s) => s.auth.user)!;
   const dispatch = useAppDispatch();
   // PLANNED endpoint: until it exists the page works from /auth/me, without the phone and dates
@@ -144,13 +145,13 @@ function DataCard() {
   );
 }
 
-/** Deleting asks for the password first: a borrowed, unlocked laptop shouldn't be enough. */
+/** Deleting asks for the password first (a Google account types its email): a borrowed, unlocked laptop shouldn't be enough. */
 function DeleteCard({ local, onDeleted }: { local: boolean; onDeleted: () => Promise<void> }) {
   const navigate = useNavigate();
   const [asking, setAsking] = useState(false);
   const [password, setPassword] = useState('');
   const remove = useMutation({
-    mutationFn: () => deleteAccount(password),
+    mutationFn: () => deleteAccount(local ? { password } : { email: password }),
     onSuccess: async () => {
       await onDeleted();
       navigate('/', { replace: true });
@@ -159,22 +160,20 @@ function DeleteCard({ local, onDeleted }: { local: boolean; onDeleted: () => Pro
   return (
     <section className="card danger" aria-labelledby="del-h">
       <h2 id="del-h">Delete account</h2>
-      <p>Removes your account, addresses, saved cart and reviews. Past orders stay for 7 years, as accounting law requires, no longer linked to you.{local && ' We ask for your password first.'}</p>
+      <p>Removes your account, addresses, saved cart and reviews. Past orders stay for 7 years, as accounting law requires, no longer linked to you.{local ? ' We ask for your password first.' : ' We ask you to type your email first.'}</p>
       {!asking ? (
         <button className="btn btn--line-danger" type="button" onClick={() => setAsking(true)}>Delete my account</button>
       ) : (
         <form className="delform" noValidate onSubmit={(e) => { e.preventDefault(); remove.mutate(); }}>
-          {local && (
-            <div className="f">
-              <label htmlFor="del-pw">Your password</label>
-              <input className="in" id="del-pw" type="password" autoComplete="current-password" value={password}
-                onChange={(e) => setPassword(e.target.value)} autoFocus />
-            </div>
-          )}
+          <div className="f">
+            <label htmlFor="del-pw">{local ? 'Your password' : 'Your email'}</label>
+            <input className="in" id="del-pw" type={local ? 'password' : 'email'} autoComplete={local ? 'current-password' : 'email'}
+              value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          </div>
           {remove.error && <p className="err" role="alert"><Icon name="alert" width={2} />{toApiError(remove.error).message}</p>}
           <div className="two">
             <button className="btn btn--ghost" type="button" onClick={() => { setAsking(false); setPassword(''); }}>Keep it</button>
-            <button className="btn btn--danger" type="submit" disabled={remove.isPending || (local && !password)}>
+            <button className="btn btn--danger" type="submit" disabled={remove.isPending || !password}>
               {remove.isPending ? 'Deleting…' : 'Delete for good'}
             </button>
           </div>

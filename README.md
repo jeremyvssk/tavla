@@ -1,14 +1,16 @@
 # i-love-shopping
 
-An online shop (B2C e-commerce) for chess, Go and backgammon products. This is **Project 2 of 3:
-the shopping cart, checkout, Stripe payments and order management.** It builds on Project 1
-(accounts, login and the product catalog), which is described, folded away, at the
-[end of this page](#project-1-accounts-login-and-the-catalog). The admin dashboard comes in Project 3.
+An online shop (B2C e-commerce) for chess, Go and backgammon products. This is **Project 3 of 3: the
+staff area, reviews, the shopper's account, the rest of the site, and the security, SEO, accessibility
+and load-test work.** It builds on Project 2
+(cart, checkout, Stripe payments and orders) and Project 1 (accounts, login and the product catalog),
+described, folded away, at the [end of this page](#project-1-accounts-login-and-the-catalog).
 
 The shop starts with about 1,770 real products (with photos and reviews), so there is something to
-put in the cart right away. The assignment brief is in [docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md).
+put in the cart right away. The assignment brief is in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md)
+(Project 2's: [docs/ASSIGNMENT2.md](docs/ASSIGNMENT2.md)).
 
-> **Reviewers:** every Project 2 checklist item is answered in **[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md)**,
+> **Reviewers:** the checklist items are answered in **[REVIEW_ANSWERS.md](REVIEW_ANSWERS.md)** (Project 3's built parts first),
 > with where to find it in the code and which tests prove it.
 
 ## Contents
@@ -20,9 +22,10 @@ put in the cart right away. The assignment brief is in [docs/ASSIGNMENT2.md](doc
 5. [How it works](#how-it-works)
 6. [Usage guide](#usage-guide)
 7. [Tests](#tests)
-8. [Troubleshooting](#troubleshooting)
-9. [Where things are](#where-things-are)
-10. [Project 1: accounts, login and the catalog](#project-1-accounts-login-and-the-catalog)
+8. [Performance analysis report](#performance-analysis-report)
+9. [Troubleshooting](#troubleshooting)
+10. [Where things are](#where-things-are)
+11. [Project 1: accounts, login and the catalog](#project-1-accounts-login-and-the-catalog)
 
 ---
 
@@ -113,6 +116,45 @@ new publishable key.
 
 ## What works
 
+**Staff area (Project 3)**
+- Three staff roles with only what each needs: **Support** runs orders, refunds and reviews; **Sales** runs
+  products, categories, prices, bulk upload and delivery; **Admin** everything, plus users and the audit log.
+  The server checks the role on every request, not just the menu
+- **Every staff member must use two-factor sign-in.** Until it is on, the admin pages answer "turn on
+  two-factor" and nothing else, and a staff account can't turn it off
+- Roles are changed on the Users page with the admin's own two-factor code, and the person's open sessions
+  get the new role at once. Admin itself is only given on the server ([Becoming an admin](#becoming-an-admin)),
+  so even a stolen admin session can't make more admins
+- An **audit log** of every staff change and sign-in: who, what, before and after, and from where (the
+  address cut to its first two parts). Nobody can edit or delete it for 12 months, not even in the database
+- **Products:** every product, hidden and archived ones too, with SKU and exact stock, counts per tab, and
+  changes to many at once (show, hide, move, price). Sales may move a price by at most half per change; an
+  admin by any amount. Deleting a product that was ever ordered archives it instead, so old orders keep it
+- **Categories:** rename, hide, move under another (never under itself) and reorder; only an empty one can
+  be deleted
+- **Bulk upload** of a CSV or JSON file: checked first without changing anything, then imported all at once
+  or not at all. Rows are matched on SKU; an update changes only the cells that have a value. The rows with
+  errors can be downloaded to fix. The product export uses the same columns, so it can be edited and uploaded
+- **Orders:** a queue by status, Start packing for many at once, Shipped with the courier and parcel number,
+  Delivered, cancelling while packing, notes for the team, part refunds by item (Support up to €100 an
+  order), and a CSV export. The shopper gets an email when it ships and when it arrives
+- **Delivery options** and the free-shipping limit are set by staff and used by the checkout at once
+- **Review moderation:** new and reported reviews wait in a queue; Keep, or Hide with a reason
+- An overview page with the day's sales and what is waiting, narrowed to each role's areas
+
+**Reviews (Project 3)**
+- Star ratings and text reviews, only from shoppers whose order with the product was delivered
+- "Helpful" votes (one per shopper, never on your own review), sorting by most helpful, and reporting
+- A hidden review leaves the shop and the average; its author still sees it, with the reason
+
+**Your account (Project 3)**
+- Profile (name and phone), up to 10 saved addresses with a default for delivery and for billing, a
+  download of everything the shop keeps about you, and deleting the account (past orders are kept for the
+  accounts, no longer linked to you)
+- A separate billing address at checkout, and the payment reference on the confirmation
+- The contact form emails the shop's inbox (MailHog in development) with the sender as reply-to; it has a
+  CAPTCHA and a limit per address
+
 **Cart**
 - Each line shows the product's photo, name, options, price and quantity. The totals update as you
   add, remove or change quantities
@@ -157,11 +199,34 @@ new publishable key.
   card. Once packing has started the server refuses (guests can cancel from their order page too)
 
 **Security of the data**
-- Names, contact details and addresses on orders, what was bought, and the payment records are
-  **encrypted in the database** (AES-256-GCM). Someone with a copy of the database sees only scrambled
-  text; the key is kept outside it, in `.env`
+- Personal data is **encrypted in the database** (AES-256-GCM): the account's email, name, phone and 2FA
+  secret, saved addresses, and on orders the contact details, addresses, what was bought and the payment
+  records. Someone with a copy of the database sees only scrambled text; the key is kept outside it, in
+  `.env`. Passwords, login tokens and backup codes are stored only as one-way hashes
+- Signing in still finds the account: beside the encrypted email the database keeps a keyed hash of it,
+  which is also what stops two accounts sharing an email
 - The site runs on **HTTPS**; plain http only redirects there. The login cookie is only ever sent
   over the encrypted connection
+- **Rate limiting with token buckets** in Redis: each address gets a bucket per sensitive action (sign-in,
+  registration, password reset, search, adding to the cart, placing orders, the contact form) and one wide
+  bucket for everything else. Short bursts are fine; a script hammering the shop gets "429, try again in N
+  seconds"
+
+**Images, search engines and accessibility (Project 3)**
+- Uploaded product photos are saved in **three extra sizes** (160, 600 and 1200 pixels wide) and each page
+  asks for the size it shows: a phone loads small files. Photos and the website's code are cached by the
+  browser for a year (their names change when they change)
+- Every page has its **own title** (under 60 characters) and **description** (155 to 160), one main heading
+  and headings in order. Product addresses are readable (`/catalog/{id}/walnut-chessboard-45-cm`) and an
+  old name in a link still finds the product
+- Checked with an automated **WCAG 2.1 A** scan (axe-core) plus colour contrast, on every shop and account
+  page: no findings. Product photos have descriptive alt text, everything works with the keyboard, and
+  at 200% zoom nothing is cut off
+
+**Load test (Project 3)**
+- Four realistic shopper journeys (browse, search, buy, sign in) run with k6 in Docker against a separate
+  copy of the shop, from 10 to 800 users at once. The numbers and the bottlenecks are in the
+  [Performance analysis report](#performance-analysis-report)
 
 **Extras beyond the brief**
 - Refunds go all the way through Stripe, and are retried every minute if Stripe is down
@@ -171,23 +236,163 @@ new publishable key.
 - The postcode is checked against the city, not just its format
 
 **Not built yet**
-- Project 3 is under way. Its screens are built in the website (the staff area under `/admin`, the
-  help, contact, about and legal pages, the address book, the full cart page), but most of what they
-  need from the server isn't yet. Where a server part is missing, the page says "The server can't do
-  this yet". In the staff area, adding, editing and archiving products with their photos, and adding
-  categories, work today
-- Moving an order on to Processing, Shipped and Delivered isn't built yet on the server (the
-  statuses and their rules are)
-- Parcel tracking with a real courier.
+- Parcel tracking with a real courier: the parcel number is shown, but nothing asks the courier where it is
+- Contact messages are only emailed; there is no inbox for them in the staff area
+- A product's key specs on the catalog's list view
+- The demo catalog's photos are linked from the suppliers' sites, so only uploaded photos get our three sizes.
+  The ones on Shopify's image server are still sized, by Shopify (`?width=`); the other supplier has one size
+- Staff find a user by the **whole** email address, not the start of one: the email is encrypted
 
 ---
 
 ## Database
 
 PostgreSQL. The schema is created automatically on startup by numbered migration files
-(`backend/src/main/resources/db/migration`, Project 2 is `V8` to `V10`).
+(`backend/src/main/resources/db/migration`: Project 2 is `V8` to `V10`, Project 3 is `V11` to `V16`).
 
-The Project 2 tables, and how they connect to `users` and `products` from Project 1 (the Project 1
+### Project 3 tables
+
+What Project 3 added, and how it joins the tables of the earlier projects (shown with only their keys):
+
+```mermaid
+erDiagram
+    users ||--o{ user_addresses : "saves (up to 10)"
+    users |o--o{ audit_log : "did (null once deleted)"
+    users |o--o{ import_jobs : uploaded
+    product_reviews ||--o{ review_votes : "voted helpful"
+    users ||--o{ review_votes : votes
+    product_reviews ||--o{ review_reports : reported
+    users |o--o{ review_reports : reports
+    orders ||--o{ order_notes : "staff notes"
+    orders ||--o{ refunds : "part refunds"
+    refunds ||--|{ refund_lines : "which items"
+    delivery_options ||--o{ orders : "shipped with"
+
+    users {
+        uuid id PK
+        text email "encrypted"
+        varchar email_hash UK "keyed hash, for sign-in"
+        text full_name "encrypted"
+        text phone "encrypted"
+        text two_factor_secret "encrypted"
+        varchar role "CUSTOMER, SUPPORT, SALES or ADMIN"
+        timestamp last_sign_in_at
+    }
+    user_addresses {
+        uuid id PK
+        uuid user_id FK
+        varchar label "Home, Work"
+        text first_name "encrypted"
+        text last_name "encrypted"
+        text street "encrypted"
+        text postcode "encrypted"
+        text city "encrypted"
+        varchar country
+        text phone "encrypted"
+        boolean default_delivery
+        boolean default_billing
+    }
+    audit_log {
+        bigint id PK
+        timestamp at
+        uuid actor_id FK
+        varchar actor_role
+        varchar kind "ORDERS, PRODUCTS, REVIEWS, ACCESS"
+        varchar action
+        varchar target_type
+        varchar target_id
+        varchar change_from
+        varchar change_to
+        varchar ip "first two parts only"
+    }
+    import_jobs {
+        uuid id PK
+        varchar file_name
+        varchar format "CSV or JSON"
+        uuid uploaded_by FK
+        varchar status "CHECKED, DONE, FAILED"
+        int row_count
+        jsonb counts
+        jsonb errors
+        jsonb planned
+    }
+    delivery_options {
+        varchar id PK "standard, express"
+        varchar name
+        numeric price
+        smallint days_min
+        smallint days_max
+        varchar countries "array"
+        boolean active
+        boolean free_over_limit
+    }
+    shop_settings {
+        smallint id PK "always 1"
+        numeric free_shipping_from
+        boolean free_shipping_on
+    }
+    orders {
+        uuid id PK
+        varchar shipping_method FK
+        varchar carrier
+        text tracking_number "encrypted"
+        text billing_name "encrypted, null = delivery address"
+    }
+    order_notes {
+        bigint id PK
+        uuid order_id FK
+        uuid author_id FK
+        varchar note
+    }
+    refunds {
+        uuid id PK
+        uuid order_id FK
+        numeric amount
+        boolean shipping
+        varchar reason
+        varchar status "DUE, PENDING, SUCCEEDED"
+        uuid requested_by FK
+    }
+    refund_lines {
+        uuid refund_id PK, FK
+        smallint position PK "the order line"
+        int quantity
+        numeric amount
+    }
+    product_reviews {
+        uuid id PK
+        varchar status "NEW, LIVE, REPORTED, HIDDEN"
+        varchar hidden_reason
+        int helpful_count
+    }
+    review_votes {
+        uuid review_id PK, FK
+        uuid user_id PK, FK
+    }
+    review_reports {
+        bigint id PK
+        uuid review_id FK
+        uuid user_id FK
+        varchar reason
+        timestamp resolved_at
+    }
+```
+
+| Table | Holds |
+|---|---|
+| `users` (changed) | Since `V16` the email, name, Google photo link and 2FA secret are encrypted. Sign-in finds the account by `email_hash`, a keyed hash of the email |
+| `user_addresses` | A shopper's saved addresses, encrypted, with one default for delivery and one for billing |
+| `audit_log` | Every staff change and staff sign-in. A database trigger refuses any edit or delete for 12 months |
+| `import_jobs` | One bulk upload: what the check found, row by row, and what the import changed |
+| `delivery_options`, `shop_settings` | The delivery options with their prices and dates, and the free-shipping limit. The checkout reads them; an order keeps a copy of the name and days |
+| `order_notes` | Staff notes on an order |
+| `refunds`, `refund_lines` | Part refunds: how much, why, for which order lines, and where Stripe stands |
+| `review_votes` | One "helpful" vote per shopper per review (the key stops a second) |
+| `review_reports` | A shopper's report of a review, until staff keep or hide it |
+
+### Project 2 tables
+
+How the cart and order tables connect to `users` and `products` from Project 1 (the Project 1
 diagram is in the [Project 1 section](#project-1-accounts-login-and-the-catalog)):
 
 ```mermaid
@@ -369,6 +574,27 @@ The key comes from `.env` and is never in the code or the database.
 **HTTPS.** The website container (nginx) serves the site over TLS 1.2 or 1.3 with a certificate it
 makes on first start. Plain http only redirects to https.
 
+**Accounts are encrypted too.** The email, name, avatar link and 2FA secret in `users` are encrypted the
+same way. An encrypted email can't be searched, so beside it the database keeps a *blind index*: a keyed
+hash (HMAC-SHA256) of the lower-cased address. Sign-in hashes what was typed and looks that up, and a
+unique index on it stops two accounts sharing an email. Without the key the hash can't be reversed or
+recomputed from a list of guesses. Rows saved before this existed are encrypted on the next start.
+
+**Rate limits (token buckets).** Each limit is a bucket of tokens in Redis, per address and action:
+sign-in has 10, refilled evenly over a minute (one every 6 seconds). A request takes a token; an empty bucket answers 429 with
+how long to wait. Reading, refilling and taking happen in one Redis script, so two requests can't spend the
+last token twice, and every copy of the server shares the same buckets.
+
+**Images.** An uploaded photo is saved at its own size plus 160, 600 and 1200 pixels wide. Each page tells
+the browser which sizes exist (`srcset`) and how wide the photo will show (`sizes`), and the browser picks
+the smallest that is sharp enough. nginx serves them straight from disk with a year-long cache. For
+production the same files would go to object storage behind a CDN (S3 and CloudFront, say), which needs
+only a new storage class in the server; the names already change whenever a photo does, so nothing
+cached is ever stale.
+
+**Search engines.** Each page sets its own title and description, products have readable addresses, and
+pages use real headings, lists, navigation and buttons, so the same structure helps screen readers.
+
 ---
 
 ## Usage guide
@@ -425,6 +651,18 @@ shows the same, and `curl -I http://localhost:5173` shows the redirect to https.
 Any database tool works too (VS Code's SQLTools, DBeaver, pgAdmin): host `localhost`, port `5432`,
 database `iloveshopping`, user `app`, password `changeme`.
 
+### Trying the Project 3 checks
+
+| Try this | How |
+|---|---|
+| Bulk upload | As Sales or Admin: **Products → Bulk upload**, then a file from [docs/examples/](docs/examples/). `products-good.csv` and `products.json` check clean; `products-bad.csv` has one mistake per line (lines 3 to 11) and the check names each line and column |
+| Accounts are encrypted | `docker compose exec postgres psql -U app -d iloveshopping -c "SELECT email, full_name, email_hash FROM users LIMIT 3"`: `v1:` text and a 64-character hash, while signing in works as before |
+| Rate limiting | `for i in $(seq 12); do curl -ks -o /dev/null -w "%{http_code} " -X POST https://localhost:5443/auth/login -H "Content-Type: application/json" -d "{\"email\":\"try$i@example.com\",\"password\":\"wrong-password\"}"; done`: 401 ten times, then 429 (each try a new email, so only the address's bucket counts) |
+| Photo sizes | Upload a photo to a product, then `ls` the `product_images_data` volume, or open the product page and look at the network tab: the page loads the 600 px file, a phone the 160 or 600 |
+| Titles, descriptions, headings, contrast, 200% zoom | `cd frontend && bun run a11y-check / /catalog /bag /contact` while the shop runs. `--login=email:password /account` checks the account pages |
+| Readable product address | Open any product: the address ends in its name. Change that name part and the page still opens and corrects it |
+| The load test | `loadtest/run.sh` (about 10 minutes), then `loadtest/run.sh down`. See the [report](#performance-analysis-report) |
+
 ### Seeing the queues
 
 Open RabbitMQ at <http://localhost:15672> → **Queues**. `orders.payment-events` takes Stripe's results,
@@ -459,11 +697,11 @@ Needs Docker running, Java 21 and Maven for the server, Bun for the website (see
 [What you need](#what-you-need)). The shop doesn't have to be running.
 
 ```sh
-cd backend && mvn verify       # server: 316 tests, a few minutes
-cd frontend && bunx vitest run # website: 75 tests, seconds
+cd backend && mvn verify       # server: 444 tests, a few minutes
+cd frontend && bunx vitest run # website: 132 tests, seconds
 ```
 
-**Latest run (2026-10-08): 391 tests, all passing.** Server tests run against a real PostgreSQL,
+**Latest run (2026-10-12): 576 tests, all passing.** Server tests run against a real PostgreSQL,
 Redis and RabbitMQ that the tests start themselves. Stripe and the mail server are replaced by
 stand-ins, so the tests don't need your Stripe keys or the internet.
 
@@ -476,12 +714,117 @@ What the brief asks for, and where it is:
 | Flow: registration | `AuthControllerIT` (`register_succeeds_thenDuplicateEmailConflicts`, `register_withInvalidBody_returns400WithFieldErrors`), `RegisterPage.test.tsx` |
 | Flow: checkout, guest and logged in | `OrderIT` (`aGuestOrder_reservesTheStock_copiesTheCart_andEmptiesIt`, `aSignedInCheckout_goesFromCartToPaid_onlyWhenStripeSaysSo`), `CheckoutPage.test.tsx` |
 | Manual: encryption in transit and at rest | [Seeing the encryption](#seeing-the-encryption), plus `EncryptionIT` |
+| Unit: product data model (Project 3) | `ProductRequestValidationTest`, `CsvReaderTest`, `PriceGuardTest`, `ImageProcessorTest` |
+| Unit: JWT handling | `JwtServiceTest` (making, checking, expiry, a changed signature) |
+| Unit: input validation | `ProductRequestValidationTest`, `authRules.test.ts`, `checkoutRules.test.ts`, `addressRules.test.ts`, and `InputValidationIT` on the API |
+| API endpoints and the database | Every `*IT`: each calls the API and checks the rows, e.g. `StaffCatalogIT`, `ImportIT`, `StaffOrderIT`, `AccountIT`, `UserEncryptionIT` |
+| Flow: product search | `SearchIT` (ranking, typo fallback, filters, sorting, paging, suggestions) |
+| Security: rate limiting | `TokenBucketIT` (burst, refill, wait time), `RateLimitIT` (every limited endpoint, spoofed addresses, the general bucket) |
+| Manual: accessibility, SEO, load | `bun run a11y-check`, `bun run layout-check`, `loadtest/run.sh` ([report](#performance-analysis-report)) |
 
 Some tests exist to prove the hard cases: two buyers racing for the last item, the same Stripe
 message twice, a forged webhook, Stripe being unreachable, a message that can never be read ending in
 the dead letter queue, a double-clicked Cancel refunding once, and the database holding only
 encrypted text. How the tests are organised is in [backend/README.md](backend/README.md#tests) and
 [frontend/README.md](frontend/README.md#tests).
+
+---
+
+## Performance analysis report
+
+**How it was tested.** [k6](https://k6.io) runs in Docker against a separate copy of the whole shop (nginx,
+server, PostgreSQL, Redis, RabbitMQ), started by `loadtest/run.sh` with its own data, so the numbers include
+TLS, the proxy and the real database. Each virtual user is one shopper who pauses 1 to 8 seconds between
+pages, like someone reading, and repeats one of four journeys ([loadtest/shop.js](loadtest/shop.js)):
+
+| Journey | Share | Steps |
+|---|---:|---|
+| Browse | 45% | Categories, a shelf's listing, a product and its reviews |
+| Search | 30% | Suggestions while typing, the results, a product |
+| Buy (as a guest) | 15% | A product, add to cart, the cart, delivery options, place the order |
+| Sign in | 10% | Sign in, the profile, my orders |
+
+Each step count runs for a minute, and all its users start in the same second (the worst case: a sale
+email sent to everyone at once). A *transaction* is one finished journey; requests are counted too.
+Photos aren't requested: nginx serves them from disk without touching the server.
+
+**Machine.** One laptop: AMD Ryzen 7 4800H (8 cores, 16 threads), Docker with 3.7 GB of memory. The server
+container is limited to **2 CPU cores and 1 GB**, like a small cloud machine; the database and k6 itself
+are not limited, and k6 shares the laptop's CPU with the shop. Payments go to a stand-in for Stripe (Stripe's
+test mode allows 25 requests a second), and an unpaid order releases its stock after 2 minutes instead of 30.
+
+**Results** (after the fix below; [loadtest/results/2026-10-12-2228](loadtest/results/2026-10-12-2228/summary.md)
+and [2026-10-12-2244](loadtest/results/2026-10-12-2244/summary.md)). Server CPU is the average once every
+user has arrived:
+
+| Users | Requests/s | Journeys/s | Median | 90% within | 95% within | Failed requests | Journeys OK | Server CPU | Server memory | Database CPU |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 4.1 | 0.7 | 26 ms | 100 ms | 108 ms | 0% | 100% | 12% | 41% | 0.0 cores |
+| 25 | 9.4 | 1.8 | 13 ms | 47 ms | 77 ms | 0% | 100% | 12% | 42% | 0.1 |
+| 50 | 18.0 | 3.7 | 9 ms | 39 ms | 68 ms | 0% | 100% | 15% | 43% | 0.1 |
+| 100 | 34.9 | 7.3 | 8 ms | 37 ms | 82 ms | 0% | 100% | 19% | 45% | 0.2 |
+| 200 | 69.6 | 14.5 | 7 ms | 38 ms | 99 ms | 0% | 100% | 29% | 47% | 0.3 |
+| 300 | 102.3 | 21.4 | 7 ms | 91 ms | 360 ms | 0.19% | 99.6% | 37% | 48% | 0.5 |
+| 400 | 135.7 | 28.5 | 6 ms | 96 ms | 425 ms | 0.07% | 99.8% | 38% | 49% | 0.6 |
+| 600 | 197.6 | 41.9 | 6 ms | 98 ms | 1.2 s | 0.10% | 99.7% | 55% | 52% | 0.8 |
+| 800 | 234.3 | 49.6 | 28 ms | 1.6 s | 2.6 s | 0.78% | 98.0% | 74% | 56% | 0.9 |
+| 1200 | 289.2 | 58.3 | 691 ms | 2.9 s | 4.6 s | 1.69% | 95.6% | 86% | 62% | 1.1 |
+| 1600 | 303.2 | 58.1 | 1.5 s | 5.4 s | 8.9 s | 2.18% | 94.5% | 88% | 63% | 1.3 |
+
+Every failed request was a **409**: the shop refusing to put in a cart, or sell, stock that other test buyers'
+unpaid orders were holding. There was no server error and no timeout at any step. The buy journeys pick from
+under 200 products and every unpaid test order holds its items for 2 minutes, so the more buyers, the more of
+those products are held: a limit of the test data, not of the server.
+
+**Against the brief's targets:**
+
+| Target | Result |
+|---|---|
+| 90% of requests within 2 seconds | Met up to 800 users (1.6 s); 2.9 s at 1,200 |
+| At least 50 users without slowing down | 50 users: 95% within 68 ms, the same as at 10 |
+| At least 10 transactions a second at peak | 14.5 journeys (70 requests) a second at 200 users; at most 58 journeys (300 requests) |
+| 98% of transactions succeed | Met up to 800 users (98.0%) |
+| Error rate under 5% | Under 2.2% at every step |
+
+**What the brief asks to identify:**
+- **Most users before responses take over 5 seconds:** about **1,200**. There, 95% of requests finish within
+  4.6 s; at 1,600 it is 8.9 s. Throughput also stops growing there (289 → 303 requests a second): the server is
+  full.
+- **Throughput:** about **50 journeys (230 requests) a second** with good response times (800 users), at most
+  58 journeys (300 requests) a second.
+- **Normal and peak load:** a specialist shop like this one expects tens of shoppers at once on a normal day;
+  we take **25 to 50** as normal and **200** as a sale peak. Both are far inside the limits: at 200 users 95% of
+  requests take under 0.1 s and the server uses under a third of its CPU.
+- **CPU or memory over 90%:** the server's 2 cores reach **100% for the first seconds of every step from 300
+  users** (everyone arriving at once), and average **86 to 88% from 1,200 users** on. Memory never passes 63% of
+  its 1 GB: memory is not the limit.
+
+**Bottlenecks, with the evidence:**
+1. **Two-letter search suggestions (fixed).** Sampling the database's running queries at 400 users showed the
+   suggestion query in 17 of 23 samples. Two letters are too short for the trigram index (a trigram is three
+   letters), so each one read all 1,772 products: about 10 ms of database CPU, against 0.6 ms from three letters
+   (`EXPLAIN ANALYZE`). The search box asks at two letters, so every search did this. **Fix:** two-letter answers
+   are kept in memory for 30 seconds (`PostgresSearchService.suggest`, tested in `SearchIT`). After it the query
+   was in 5 of 27 samples, suggestions' 95th percentile at 600 users fell from 1.6 s to 0.5 s, and the database's
+   CPU at 600 users fell from 1.0 to 0.8 cores ([before](loadtest/results/2026-10-12-1830/summary.md)).
+2. **Everyone arriving at once.** At 600 users, nearly all slow requests fall in the first 10 seconds; after the
+   first 15 seconds 95% of requests finish within 85 ms. The burst queues work on the server's 2 cores and its
+   10 database connections. **Proposed:** run two or more server containers behind nginx (they keep no state of
+   their own, so any of them can answer any request), and cache what every first page asks for, the category
+   tree, for a few seconds.
+3. **Sign-in.** The slowest request once the burst is over (95% within 1.1 s at 600 users, against 19 ms for
+   suggestions): checking a password with bcrypt is slow on purpose, and costs CPU on the 2 cores. Making it
+   cheaper would make stolen hashes easier to crack, so the fix is **more CPU for the server**, not a weaker hash.
+4. **Listing counts.** The next most frequent database work: each listing counts brands, prices and ratings for
+   its filters, four queries per page. **Proposed:** keep the counts of an unfiltered shelf for a minute, since
+   they change only when products do.
+
+**Images and static files (CDN).** Not part of the run: nginx serves them from disk, cached for a year. In
+production a CDN in front of nginx would serve them from near the shopper; see
+[How it works](#how-it-works) → Images.
+
+To run it yourself: `loadtest/run.sh` (the steps 10 to 400), or `loadtest/run.sh 50 800` for chosen steps; then
+`loadtest/run.sh down`. Each run writes its own folder in `loadtest/results/`.
 
 ---
 
@@ -504,6 +847,10 @@ encrypted text. How the tests are organised is in [backend/README.md](backend/RE
 - **Port already in use:** change `FRONTEND_PORT`, `FRONTEND_HTTPS_PORT` or `BACKEND_PORT` in `.env`
   and start again.
 - **Server won't start after an update:** run `./start.sh reset` to start with a fresh database.
+  This includes a database made while Project 3 was being built, before its migrations were final.
+- **`bun run a11y-check` can't find a browser:** it uses Playwright's Chromium. Run
+  `bunx playwright-core install chromium-headless-shell` in `frontend/`, or point `CHROME_PATH` at a Chrome or Chromium.
+- **The load test's copy of the shop is still running:** `loadtest/run.sh down` stops it and deletes its data.
 - **No email arrives:** emails never leave your machine; they all appear in MailHog. If MailHog was
   down, the email waits in the `orders.emails.dlq` queue in RabbitMQ (see
   [Seeing the queues](#seeing-the-queues)).
@@ -519,7 +866,8 @@ encrypted text. How the tests are organised is in [backend/README.md](backend/RE
 | [frontend/](frontend/README.md) | The website. Its README lists the pages, folders and tests |
 | [tools/catalog-import/](tools/catalog-import/README.md) | The Python scripts that build the demo catalog |
 | [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | Answers to the review checklist, with code and test references |
-| [docs/](docs/) | The assignment briefs and the Project 1 ERD image |
+| [docs/](docs/) | The assignment briefs, the Project 1 ERD image, and example bulk upload files in `docs/examples/` |
+| [loadtest/](loadtest/) | The load test: k6 script, the separate stack it runs against, and each run's results |
 | `rabbitmq/` | Which RabbitMQ plugins are on (the management page and Move messages) |
 | `CLAUDE.md`, `claude-docs/`, `.claude/` | Instructions and notes for Claude Code, the AI assistant used while building this |
 | `homework/` | The author's study notes for the topics in this project |
@@ -727,14 +1075,17 @@ If you'd rather skip this, the automated tests still cover both features (`Captc
 
 ### Becoming an admin
 
-There is no admin sign-up on purpose. Create a normal account, then promote it:
+There is no admin sign-up on purpose, and Admin can't be given from the website either: only from the
+server, so a stolen admin session can never make more admins. Create a normal account (with a password,
+not Google), then promote it:
 
 ```sh
 docker compose exec postgres psql -U app -d iloveshopping \
   -c "UPDATE users SET role = 'ADMIN' WHERE email = 'you@example.com'"
 ```
 
-Log in again to get admin rights.
+Sign in again. The admin pages ask you to turn on two-factor sign-in first (every staff member needs
+it). From there, the Users page gives the Support and Sales roles.
 
 ### Project 1 API
 

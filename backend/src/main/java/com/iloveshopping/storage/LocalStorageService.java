@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -48,16 +49,49 @@ public class LocalStorageService implements StorageService {
     }
 
     @Override
+    public void storeVariant(String url, int width, byte[] bytes) {
+        if (url == null || !url.startsWith(publicPrefix + "/") || width <= 0) {
+            throw new IllegalArgumentException("not a stored file");
+        }
+        Path target = resolveInsideRoot(variantName(url.substring(publicPrefix.length() + 1), width));
+        try {
+            Files.write(target, bytes, StandardOpenOption.CREATE_NEW);
+        } catch (IOException e) {
+            throw new UncheckedIOException("could not store image", e);
+        }
+    }
+
+    @Override
     public void delete(String url) {
         if (url == null || !url.startsWith(publicPrefix + "/")) {
             return;
         }
         try {
-            Files.deleteIfExists(resolveInsideRoot(url.substring(publicPrefix.length() + 1)));
+            Path original = resolveInsideRoot(url.substring(publicPrefix.length() + 1));
+            Files.deleteIfExists(original);
+            String name = original.getFileName().toString();
+            int dot = name.lastIndexOf('.');
+            if (dot > 0) {
+                // The narrower copies: abc-160.jpg, abc-600.jpg, ... beside abc.jpg.
+                String glob = name.substring(0, dot) + "-*" + name.substring(dot);
+                try (DirectoryStream<Path> copies = Files.newDirectoryStream(original.getParent(), glob)) {
+                    for (Path copy : copies) {
+                        Files.deleteIfExists(copy);
+                    }
+                }
+            }
         } catch (IOException | IllegalArgumentException e) {
             // An orphaned file is untidy, not dangerous; the database row is already gone.
             log.warn("Could not delete stored file {}", url, e);
         }
+    }
+
+    private static String variantName(String relative, int width) {
+        int dot = relative.lastIndexOf('.');
+        if (dot <= relative.lastIndexOf('/')) {
+            throw new IllegalArgumentException("no extension");
+        }
+        return relative.substring(0, dot) + "-" + width + relative.substring(dot);
     }
 
     /**

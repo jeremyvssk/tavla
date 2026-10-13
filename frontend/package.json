@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "layout-check": "node scripts/layout-check.mjs"
+    "layout-check": "node scripts/layout-check.mjs",
+    "a11y-check": "node scripts/a11y-check.mjs"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.2.7",
@@ -29,6 +30,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "axe-core": "4.10.3",
     "jsdom": "^24.1.1",
     "playwright-core": "1.56.1",
     "typescript": "^5.5.3",

@@ -67,6 +67,7 @@ services:
       SMTP_HOST: ${SMTP_HOST:-mailhog}
       SMTP_PORT: ${SMTP_PORT:-1025}
       MAIL_FROM: ${MAIL_FROM:-noreply@iloveshopping.local}
+      SUPPORT_INBOX: ${SUPPORT_INBOX:-support@iloveshopping.local}
       FRONTEND_RESET_URL: ${FRONTEND_RESET_URL:-https://localhost:5443/reset}
       # where the links in order emails point
       FRONTEND_URL: ${FRONTEND_URL:-https://localhost:5443}

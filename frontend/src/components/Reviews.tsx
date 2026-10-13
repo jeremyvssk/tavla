@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  fetchReviews, fetchReviewSummary, ProductDetail, reportReview, Review, ReviewSort, voteReview,
+  fetchReviews, fetchReviewSummary, ProductDetail, reportReview, Review, ReviewSort, ReviewSummary, voteReview,
 } from '../api/catalog';
 import { toApiError } from '../api/errors';
 import { useAppSelector } from '../store';
@@ -30,7 +30,7 @@ export default function Reviews({ product }: { product: ProductDetail }) {
   const [pages, setPages] = useState(1);
   const [writing, setWriting] = useState(false);
 
-  // PLANNED endpoint: until it exists, the summary falls back to the product's own average and count
+  // while it loads, the product's own average and count stand in
   const summary = useQuery({
     queryKey: ['reviews', product.id, 'summary', status],
     queryFn: () => fetchReviewSummary(product.id),
@@ -123,7 +123,7 @@ export default function Reviews({ product }: { product: ProductDetail }) {
 /** Who may write: buyers, once per product. Guests are asked to sign in; others are told why not. */
 function WriteCta({ status, me, productId, onWrite }: {
   status: string;
-  me: { purchasedAt: string | null; reviewed: boolean } | null | undefined;
+  me: ReviewSummary['me'] | undefined;
   productId: string;
   onWrite: () => void;
 }) {
@@ -132,6 +132,13 @@ function WriteCta({ status, me, productId, onWrite }: {
       <div className="rv-cta">
         <p><b>Reviews come from people who bought this.</b> Bought it? Sign in and write one.</p>
         <Link className="btn btn--ghost" to="/login" state={{ from: `/catalog/${productId}` }}>Sign in to review</Link>
+      </div>
+    );
+  }
+  if (me?.review && !me.review.published) {
+    return (
+      <div className="rv-cta">
+        <p><b>Your review isn't published.</b> {me.hiddenReason ? `Our team hid it: ${me.hiddenReason}.` : 'Our team hid it.'} Only you can see this. <Link className="lnk" to="/contact">Ask us about it</Link></p>
       </div>
     );
   }
@@ -152,27 +159,24 @@ function ReviewItem({ review: r, productId, signedIn }: { review: Review; produc
   const [said, setSaid] = useState<string | null>(null);
   const [reported, setReported] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  // the API sends vote counts once helpful votes exist; until then the review shows without them
-  const votable = r.helpfulCount !== undefined;
   const vote = useMutation({
-    mutationFn: (v: 'helpful' | 'not_helpful' | null) => voteReview(productId, r.id, v),
+    mutationFn: (v: 'helpful' | null) => voteReview(productId, r.id, v),
     onSuccess: (updated, v) => {
       setProblem(null);
-      setSaid(v === 'helpful' ? 'You said this helped. Press Yes again to take it back.'
-        : v === 'not_helpful' ? "You said this didn't help. Press No again to take it back." : 'Your vote is taken back.');
+      setSaid(v === 'helpful' ? 'You said this helped. Press it again to take it back.' : 'Your vote is taken back.');
       client.setQueriesData<{ items: Review[] }>({ queryKey: ['reviews', productId] }, (old) =>
         old && 'items' in old ? { ...old, items: old.items.map((x) => (x.id === r.id ? updated : x)) } : old);
     },
     onError: (err) => setProblem(toApiError(err).message),
   });
   const report = useMutation({
-    mutationFn: () => reportReview(productId, r.id, 'shopper_report'),
+    mutationFn: () => reportReview(productId, r.id, 'Reported from the product page'),
     onSuccess: () => setReported(true),
     onError: (err) => setProblem(toApiError(err).message),
   });
-  const press = (v: 'helpful' | 'not_helpful') => {
+  const press = () => {
     if (!signedIn) { setProblem('Sign in to vote. One vote per shopper keeps the count honest.'); return; }
-    vote.mutate(r.myVote === v ? null : v);
+    vote.mutate(r.myVote === 'helpful' ? null : 'helpful');
   };
 
   return (
@@ -185,14 +189,10 @@ function ReviewItem({ review: r, productId, signedIn }: { review: Review; produc
         <span>{day.format(new Date(r.createdAt))}</span>
       </div>
       <p className="body">{r.body}</p>
-      {votable && (
+      {r.published && (
         <div className="helpful">
-          <span>Helpful?</span>
-          <button type="button" aria-pressed={r.myVote === 'helpful'} disabled={vote.isPending} onClick={() => press('helpful')}>
-            <Icon name="thumb" />Yes <small>{r.helpfulCount}</small>
-          </button>
-          <button type="button" aria-pressed={r.myVote === 'not_helpful'} disabled={vote.isPending} onClick={() => press('not_helpful')}>
-            No <small>{r.notHelpfulCount ?? 0}</small>
+          <button type="button" aria-pressed={r.myVote === 'helpful'} disabled={vote.isPending} onClick={press}>
+            <Icon name="thumb" />Helpful <small>{r.helpfulCount}</small>
           </button>
           {said && <span className="said" role="status">{said}</span>}
           {reported

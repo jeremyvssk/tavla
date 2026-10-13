@@ -1,4 +1,4 @@
-// Scheduled job that asks Stripe again for refunds it couldn't be asked for when the order was cancelled.
+// Scheduled job that asks Stripe again for refunds it couldn't be asked for at the time: a cancelled order's, or a part refund.
 package com.iloveshopping.order;
 
 import com.iloveshopping.payment.PaymentService;
@@ -25,10 +25,12 @@ public class RefundRetry {
 
     private final PaymentService paymentService;
     private final OrderService orderService;
+    private final StaffOrderService staffOrderService;
 
-    public RefundRetry(PaymentService paymentService, OrderService orderService) {
+    public RefundRetry(PaymentService paymentService, OrderService orderService, StaffOrderService staffOrderService) {
         this.paymentService = paymentService;
         this.orderService = orderService;
+        this.staffOrderService = staffOrderService;
     }
 
     @Scheduled(initialDelayString = "PT1M", fixedDelayString = "PT1M")
@@ -38,6 +40,14 @@ public class RefundRetry {
                 orderService.requestRefund(orderId);
             } catch (RuntimeException e) {
                 log.warn("Could not ask for the refund of order {}; trying again next run", orderId, e);
+            }
+        }
+        // part refunds made by staff (StaffOrderService.refund) are the same kind of to-do list, in their own table
+        for (Refund refund : staffOrderService.refundsDue(WAIT, BATCH)) {
+            try {
+                staffOrderService.askStripe(refund.getId(), refund.getOrderId(), refund.getAmount());
+            } catch (RuntimeException e) {
+                log.warn("Could not ask for part refund {}; trying again next run", refund.getId(), e);
             }
         }
     }

@@ -17,6 +17,12 @@ public record OrderNotice(UUID orderId, Kind kind) {
         /** cancelled by the shopper (a refund follows) or by the timer (it was never paid) */
         CANCELLED,
         /** Stripe confirmed the money went back to the card */
-        REFUNDED
+        REFUNDED,
+        /** staff handed it to the courier: the carrier and parcel number */
+        SHIPPED,
+        /** staff marked it delivered */
+        DELIVERED,
+        /** staff refunded part of it (some items, or the shipping); the amount is the order's latest refund */
+        PART_REFUNDED
     }
 }

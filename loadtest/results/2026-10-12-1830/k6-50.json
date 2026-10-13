@@ -1,0 +1,433 @@
+{
+    "metrics": {
+        "http_reqs": {
+            "count": 1337,
+            "rate": 18.225848863148254
+        },
+        "transactions": {
+            "count": 268,
+            "rate": 3.6533489119848412
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0.5206044016454751,
+            "med": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 14.94904628000002,
+            "max": 36.842334
+        },
+        "http_req_sending": {
+            "p(99)": 0.33093068000000087,
+            "max": 0.828581,
+            "avg": 0.16513209947643967,
+            "med": 0.164199,
+            "p(90)": 0.22309940000000003,
+            "p(95)": 0.24989820000000001
+        },
+        "iteration_duration": {
+            "p(95)": 15655.121779249992,
+            "p(99)": 18395.70650242,
+            "max": 18948.640721,
+            "avg": 11874.092964716418,
+            "med": 11850.2191905,
+            "p(90)": 14903.1795121
+        },
+        "group_duration": {
+            "med": 11850.0150225,
+            "p(90)": 14902.9793066,
+            "p(95)": 15654.886829999992,
+            "p(99)": 18395.47186955,
+            "max": 18948.510974,
+            "avg": 11873.727039406725
+        },
+        "http_req_duration": {
+            "avg": 19.028556703814544,
+            "med": 11.070535,
+            "p(90)": 37.406114,
+            "p(95)": 54.50802640000003,
+            "p(99)": 104.27397024000007,
+            "max": 359.068061,
+            "thresholds": {
+                "p(90)<2000": false
+            }
+        },
+        "vus": {
+            "value": 11,
+            "min": 0,
+            "max": 50
+        },
+        "checks": {
+            "passes": 1292,
+            "fails": 0,
+            "value": 1
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 1337,
+            "thresholds": {
+                "rate<0.05": false
+            },
+            "value": 0
+        },
+        "data_sent": {
+            "rate": 2134.9462182895295,
+            "count": 156614
+        },
+        "http_req_duration{expected_response:true}": {
+            "avg": 19.028556703814544,
+            "med": 11.070535,
+            "p(90)": 37.406114,
+            "p(95)": 54.50802640000003,
+            "p(99)": 104.27397024000007,
+            "max": 359.068061
+        },
+        "http_req_blocked": {
+            "avg": 0.6301148855646934,
+            "med": 0.001092,
+            "p(90)": 0.001513,
+            "p(95)": 0.0017452000000000006,
+            "p(99)": 19.11167728000023,
+            "max": 39.812464
+        },
+        "http_req_connecting": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 1.5918616800000076,
+            "max": 13.107464,
+            "avg": 0.05494638668661181,
+            "med": 0
+        },
+        "http_req_waiting": {
+            "p(90)": 37.046319800000006,
+            "p(95)": 54.15083080000003,
+            "p(99)": 103.91925700000006,
+            "max": 358.74438,
+            "avg": 18.693007407629043,
+            "med": 10.748408
+        },
+        "data_received": {
+            "count": 5507676,
+            "rate": 75080.08254539187
+        },
+        "iterations": {
+            "count": 268,
+            "rate": 3.6533489119848412
+        },
+        "journey_ok": {
+            "passes": 268,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.98": false
+            },
+            "value": 1
+        },
+        "http_req_receiving": {
+            "med": 0.135718,
+            "p(90)": 0.29623040000000006,
+            "p(95)": 0.3467590000000001,
+            "p(99)": 0.4922044800000004,
+            "max": 2.453688,
+            "avg": 0.17041719670904987
+        },
+        "vus_max": {
+            "value": 50,
+            "min": 50,
+            "max": 50
+        }
+    },
+    "setup_data": {
+        "categories": [
+            "backgammon",
+            "chess",
+            "go",
+            "more-games"
+        ],
+        "products": [
+            "b07696b9-a937-7d1d-def8-cab9806127f8",
+            "0bb6b75b-761d-71e0-5eb3-4aebd7d3c195",
+            "56315df9-e091-bb15-2625-bcc305e62990",
+            "657406c5-1f00-f4c5-0f70-8792204758fc",
+            "78e5efeb-0b6d-effb-92bc-a5fa3afd2252",
+            "89659cd2-f73f-b44e-9610-b081732080e8",
+            "d0db9b97-5c09-b321-47a3-b83890ceb388",
+            "0443d3bc-c782-254e-7337-c9e269928c05",
+            "3fded4b5-7093-4c7c-90fb-eefc040f0753",
+            "6ef51351-efc1-38f1-2191-88a2fa1c5cc1",
+            "d5472de4-f072-3bec-ced9-45dec34dcda7",
+            "e81944f9-1ac7-1e60-2791-e85ec60188f5",
+            "46a02873-c1c2-ef40-a125-029bedc749c5",
+            "4f3d991e-f2c3-398f-c0d3-4afde9e59927",
+            "5f9e042c-a7ab-ba11-f8d0-791da0f56e28",
+            "664087f5-6c6a-52e3-019a-df8fb8b6668d",
+            "70578c50-9447-5a6e-64e4-c4641ab8e9b8",
+            "b696420d-3923-f4d3-10b2-2bbabe1e9e5a",
+            "c5ca7f9f-3cd7-2338-bb88-963a09d6f957",
+            "e136f8cd-4457-ebf8-ee91-27b83ed93b05",
+            "052053c8-97a7-655c-cc75-73e33b4e7c5e",
+            "11807145-f087-d3e6-f551-20d006f1ace2",
+            "636de028-ffc8-d100-c094-f6d4356a5e90",
+            "69f4b244-e1f5-41d0-c4d7-3e086ba4a557",
+            "b6478ad4-7d91-af10-c7ec-0c702414a0d9",
+            "ba104e42-1729-de83-f2d9-47c4b5ba59ba",
+            "ba60347f-5c1d-3213-bcd5-eb969ab5e7b6",
+            "ca3227e4-2fe0-1698-9199-ee88330af894",
+            "d280fd1f-bd8f-eb9f-7f61-1516430240c5",
+            "da185de0-7997-66c4-cd68-dd87bf8baf34",
+            "dd26e1cb-8624-1b40-1897-c5a1d5cc7853",
+            "0726cded-d88f-a43f-6950-b99726b83909",
+            "07d0c7ed-8f0c-37a1-7f1f-2731b757e191",
+            "1ea07715-d1d9-657b-fdab-b11f0a64701c",
+            "258d44e1-b636-272d-80be-cae492d92ee4",
+            "2b1414c4-5ffc-e738-587d-f7231b5de6ca",
+            "2e5c7eab-599b-4a34-9221-4401ec8b27d3",
+            "4cdc16be-0556-78c9-0823-e90cd3769c55",
+            "631aca36-46d5-7281-1adf-e96b6f6403a1",
+            "6dcbdbe8-2528-1cca-c3f5-296aff3dde01",
+            "8c698ec1-5ca0-21fe-3c0c-266048a9afa9",
+            "95aedb15-bb62-7532-476e-37da1c0c925d",
+            "a8c8392d-6f2a-2ac6-ad75-15ef47f918b8",
+            "b02305fe-f0f6-c006-10d2-278253fde769",
+            "b9dff5d1-776d-d9e4-5f74-7059162c0869",
+            "db3d65a7-2fe7-21cd-c731-dfdbfde667c2",
+            "df29f63e-b3ed-e0ab-e67c-e2f305914a01",
+            "f1464470-fe41-ec4e-0e29-b50b017894b9",
+            "f7971eb3-2a21-5a54-7802-62bb2df9affb",
+            "005c743f-89d2-decb-cbc6-72ee39226607",
+            "034a7b84-e38a-0cb1-908a-df1297f32c65",
+            "07310e27-27ee-1152-8604-f32e176bf827",
+            "0ca0b699-b4a3-bcc1-0c75-2ba5b7ac680b",
+            "13c58ce1-f5a8-e6f0-3cb9-fe7d62ccd950",
+            "17483f43-17e8-6016-8402-20d368e1ee83",
+            "44b77d8a-5a58-2001-4287-02ffdc8b5958",
+            "51e79938-3a31-ced6-d723-1de22ccf6dad",
+            "60e1a704-64df-3ebf-076e-24e85e8bbdd3",
+            "6c4d6163-7586-5a03-8df8-bcd29bee47b5",
+            "835888ca-d9b5-2754-95ac-cd67993357ab",
+            "95122709-9e9c-e58f-53ca-70458f3b1469",
+            "96cd33ca-39c6-05e6-3c00-4fa162ac1bc5",
+            "98a5158d-94f9-6d87-e3fa-fe42a94ff40f",
+            "9abe0928-4d04-a427-c97f-38ade783f9bc",
+            "b2b5a567-a457-d16d-a9b8-d89ccad77e06",
+            "c61e1bd3-3a09-6b26-02b2-ce4ba10861ad",
+            "c66df45d-7bd6-058e-b13f-db39a37da010",
+            "cb2c88ec-f3e9-1e82-7c91-c1c8a2ee3336",
+            "d0dbdb4f-a1cc-a3dd-c523-854c2e67baee",
+            "d1811539-a612-edaf-fbc1-c4b5f025564b",
+            "d1d95dd2-6b48-f285-b4e9-d3ac987aebcb",
+            "d500fac9-ebbe-456d-5917-3f58ddfc5a7c",
+            "d551cdfc-be65-aa08-6c1a-eedfeff3bc6c",
+            "d60bf812-956b-32a9-5702-8eec9edb5ba7",
+            "da929240-af1b-7f45-2b80-93605e0f331d",
+            "dc8ff146-af36-49cd-e65d-6d5aa8a9ec65",
+            "e316eecb-4c52-2e51-7bbd-a92b7f8f4203",
+            "e68e86b8-fd9f-7a8a-f1d9-eeea9682b705",
+            "ee76f323-34ef-702b-c0f3-c299f22c5994",
+            "f0e4d11d-2725-e159-71b8-74b9afc2596f",
+            "fa511737-efc3-aec6-0113-70d4285d7d9a",
+            "fa717b92-5ae2-37ad-1284-1dab2c27c43d",
+            "fd720ef9-c396-daf6-3696-17375abdf809",
+            "ff0ced82-c5f3-b1a7-4453-f48b3b67b394",
+            "16c8ec7e-7148-29b3-e3d2-c1681d98e7bd",
+            "546a37c2-e575-2ba3-8f84-c95fcb0d2ed2",
+            "689b602f-0f03-5451-9c34-b1926be1e282",
+            "b5f254ae-d67e-770f-6998-bb1dfce7865d",
+            "c53ddbd6-74c5-1a76-eca3-060abe41dbab",
+            "c79f6781-6c2c-d18d-65f6-5ca01c43d327",
+            "d1191292-bcd2-df25-ebfa-d2453ae40f18",
+            "e1562562-2b3c-b10f-933e-8947c6c62f76",
+            "e384252d-bb9e-ca2a-3713-b63e21e000a8",
+            "066e2e14-28d2-9be5-205b-d330628e02cb",
+            "4fd6bd54-b632-5de0-1543-32119227feed",
+            "5003f806-c05b-ca2f-9bdd-82a575309a27",
+            "7bef8bbd-4d79-b5f2-c376-33b213c52adc",
+            "cd5dbe13-9060-609b-79d3-bb24e7482328"
+        ],
+        "users": [
+            "loadtest-1791819246701-0@example.com",
+            "loadtest-1791819246701-1@example.com",
+            "loadtest-1791819246701-2@example.com",
+            "loadtest-1791819246701-3@example.com",
+            "loadtest-1791819246701-4@example.com",
+            "loadtest-1791819246701-5@example.com",
+            "loadtest-1791819246701-6@example.com",
+            "loadtest-1791819246701-7@example.com",
+            "loadtest-1791819246701-8@example.com",
+            "loadtest-1791819246701-9@example.com",
+            "loadtest-1791819246701-10@example.com",
+            "loadtest-1791819246701-11@example.com",
+            "loadtest-1791819246701-12@example.com",
+            "loadtest-1791819246701-13@example.com",
+            "loadtest-1791819246701-14@example.com",
+            "loadtest-1791819246701-15@example.com",
+            "loadtest-1791819246701-16@example.com",
+            "loadtest-1791819246701-17@example.com",
+            "loadtest-1791819246701-18@example.com",
+            "loadtest-1791819246701-19@example.com",
+            "loadtest-1791819246701-20@example.com",
+            "loadtest-1791819246701-21@example.com",
+            "loadtest-1791819246701-22@example.com",
+            "loadtest-1791819246701-23@example.com",
+            "loadtest-1791819246701-24@example.com",
+            "loadtest-1791819246701-25@example.com",
+            "loadtest-1791819246701-26@example.com",
+            "loadtest-1791819246701-27@example.com",
+            "loadtest-1791819246701-28@example.com",
+            "loadtest-1791819246701-29@example.com",
+            "loadtest-1791819246701-30@example.com",
+            "loadtest-1791819246701-31@example.com",
+            "loadtest-1791819246701-32@example.com",
+            "loadtest-1791819246701-33@example.com",
+            "loadtest-1791819246701-34@example.com",
+            "loadtest-1791819246701-35@example.com",
+            "loadtest-1791819246701-36@example.com",
+            "loadtest-1791819246701-37@example.com",
+            "loadtest-1791819246701-38@example.com",
+            "loadtest-1791819246701-39@example.com"
+        ]
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {
+            "browse": {
+                "name": "browse",
+                "path": "::browse",
+                "id": "c62c581410cd619dd49525ef1ffbe4b0",
+                "groups": {},
+                "checks": {
+                        "categories": {
+                            "name": "categories",
+                            "path": "::browse::categories",
+                            "id": "5de0dae5bae87800f8cf519cbb9848d4",
+                            "passes": 118,
+                            "fails": 0
+                        },
+                        "listing": {
+                            "passes": 118,
+                            "fails": 0,
+                            "name": "listing",
+                            "path": "::browse::listing",
+                            "id": "845b33cedfa98ba04b121b6e8df75a60"
+                        },
+                        "product": {
+                            "path": "::browse::product",
+                            "id": "10b2d0fe8fa1688cc51fb145729d2f11",
+                            "passes": 118,
+                            "fails": 0,
+                            "name": "product"
+                        },
+                        "reviews": {
+                            "id": "fe3b900379b0c7209e3e6f6be4ef7632",
+                            "passes": 118,
+                            "fails": 0,
+                            "name": "reviews",
+                            "path": "::browse::reviews"
+                        }
+                    }
+            },
+            "buy": {
+                "checks": {
+                    "product": {
+                        "name": "product",
+                        "path": "::buy::product",
+                        "id": "6f33e449db80bb1b8b179deaff0d4282",
+                        "passes": 45,
+                        "fails": 0
+                    },
+                    "add to cart": {
+                        "id": "74f8a7877897dc8a9bff14f21cf83af9",
+                        "passes": 45,
+                        "fails": 0,
+                        "name": "add to cart",
+                        "path": "::buy::add to cart"
+                    },
+                    "cart": {
+                        "name": "cart",
+                        "path": "::buy::cart",
+                        "id": "e020e5fb27a0a63dacd8425a0ccccc4c",
+                        "passes": 45,
+                        "fails": 0
+                    },
+                    "delivery options": {
+                        "passes": 45,
+                        "fails": 0,
+                        "name": "delivery options",
+                        "path": "::buy::delivery options",
+                        "id": "fb3f29bfa59641d988fc88c64e9805db"
+                    },
+                    "place order": {
+                        "id": "6f5b71f019ca6fd011e6511c1c91f392",
+                        "passes": 44,
+                        "fails": 0,
+                        "name": "place order",
+                        "path": "::buy::place order"
+                    }
+                },
+                "name": "buy",
+                "path": "::buy",
+                "id": "45d7d9102614c2377b982895b1af76b9",
+                "groups": {}
+            },
+            "search": {
+                "checks": {
+                    "suggestions": {
+                        "name": "suggestions",
+                        "path": "::search::suggestions",
+                        "id": "cb982aec90c384c273179ee4d3c2ae51",
+                        "passes": 350,
+                        "fails": 0
+                    },
+                    "search": {
+                        "passes": 93,
+                        "fails": 0,
+                        "name": "search",
+                        "path": "::search::search",
+                        "id": "f383ed0053eabd46ab07bc3475047e79"
+                    },
+                    "product": {
+                        "name": "product",
+                        "path": "::search::product",
+                        "id": "6a9b5efea30c7e9e8441098bfe73f9a5",
+                        "passes": 93,
+                        "fails": 0
+                    }
+                },
+                "name": "search",
+                "path": "::search",
+                "id": "26b8520e2af4331315c3a77500b7a2a4",
+                "groups": {}
+            },
+            "account": {
+                "path": "::account",
+                "id": "bc0ce838ac6dd2a5ad73d78141528d7b",
+                "groups": {},
+                "checks": {
+                        "login": {
+                            "name": "login",
+                            "path": "::account::login",
+                            "id": "ac0a1cdb3db909ec8c1b0725e7667fe2",
+                            "passes": 20,
+                            "fails": 0
+                        },
+                        "profile": {
+                            "path": "::account::profile",
+                            "id": "90a286fc630808cf0291cb7070479534",
+                            "passes": 20,
+                            "fails": 0,
+                            "name": "profile"
+                        },
+                        "my orders": {
+                            "name": "my orders",
+                            "path": "::account::my orders",
+                            "id": "3ef495720e333b3f4912ca829271ebe1",
+                            "passes": 20,
+                            "fails": 0
+                        }
+                    },
+                "name": "account"
+            }
+        },
+        "checks": {}
+    }
+}

@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import type { OrderDetail, OrderLine, OrderStatus } from '../api/orders';
 import { formatPrice } from '../lib/format';
 import { statusLook, TRACKER_STEPS, trackerStep } from '../lib/orderStatus';
-import { arrivalWindow, SHIPPING, ShippingMethod } from '../lib/shipping';
+import { arrivalWindow } from '../lib/shipping';
 import { COUNTRIES } from '../validation/checkoutRules';
 import Icon from './Icon';
 import Photo from './Photo';
@@ -29,13 +29,12 @@ export function Tracker({ order, notes: given }: { order: OrderDetail; notes?: s
   const now = trackerStep(order.status);
   if (now < 0) return null;
   const at = (s: OrderStatus) => order.history.find((h) => h.status === s)?.at;
-  const option = SHIPPING.find((o) => o.method === order.shippingMethod) ?? SHIPPING[0];
   const notes = given ?? [
     formatWhen(order.placedAt),
     at('PAYMENT_SUCCESSFUL') ? formatWhen(at('PAYMENT_SUCCESSFUL')!) : 'Confirming',
     at('PROCESSING') ? formatWhen(at('PROCESSING')!) : 'Usually the same day',
     at('SHIPPED') ? formatWhen(at('SHIPPED')!) : 'Tracking link by email',
-    at('DELIVERED') ? formatWhen(at('DELIVERED')!) : arrivalWindow(option, new Date(order.placedAt)),
+    at('DELIVERED') ? formatWhen(at('DELIVERED')!) : arrivalWindow(orderDays(order), new Date(order.placedAt)),
   ];
   return (
     <ol className="trk" aria-label="Order progress">
@@ -70,17 +69,18 @@ export function ReadOnlyLines({ lines }: { lines: OrderLine[] }) {
   );
 }
 
-export function shippingName(method: ShippingMethod) {
-  return (SHIPPING.find((o) => o.method === method) ?? SHIPPING[0]).name;
+/** The delivery days the order was placed with, for arrivalWindow. */
+export function orderDays(order: Pick<OrderDetail, 'deliveryDaysMin' | 'deliveryDaysMax'>) {
+  return { daysMin: order.deliveryDaysMin, daysMax: order.deliveryDaysMax };
 }
 
-export function Totals({ subtotal, shipping, method, vat, total, grandLabel }: {
-  subtotal: number; shipping: number; method: ShippingMethod; vat: number; total: number; grandLabel: string;
+export function Totals({ subtotal, shipping, methodName, vat, total, grandLabel }: {
+  subtotal: number; shipping: number; methodName: string; vat: number; total: number; grandLabel: string;
 }) {
   return (
     <dl className="tot">
       <div><dt>Subtotal</dt><dd>{formatPrice(subtotal)}</dd></div>
-      <div><dt>Shipping · {shippingName(method)}</dt>{shipping === 0 ? <dd className="free">Free</dd> : <dd>{formatPrice(shipping)}</dd>}</div>
+      <div><dt>Shipping · {methodName}</dt>{shipping === 0 ? <dd className="free">Free</dd> : <dd>{formatPrice(shipping)}</dd>}</div>
       <div className="vat"><dt>Includes VAT 24%</dt><dd>{formatPrice(vat)}</dd></div>
       <div className="grand"><dt>{grandLabel}</dt><dd>{formatPrice(total)}</dd></div>
     </dl>

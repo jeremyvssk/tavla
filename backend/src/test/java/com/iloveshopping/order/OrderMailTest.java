@@ -22,13 +22,13 @@ class OrderMailTest {
         return new OrderDetailResponse(UUID.randomUUID(), "TV-10042", Instant.parse("2026-10-08T11:02:00Z"), status, 3,
                 new BigDecimal("113.00"), "mart.kask@example.com", "+372 5876 2210",
                 new OrderDetailResponse.ShipTo("Mart", "Kask", "Pärnu mnt 22", flat, "10141", "Tallinn", "EE"),
-                "standard",
+                "standard", "Standard courier", 2, 4,
                 List.of(new OrderDetailResponse.Line(UUID.randomUUID(), "Walnut board", "45 cm", null, null,
                                 new BigDecimal("24.00"), 2, new BigDecimal("48.00")),
                         new OrderDetailResponse.Line(UUID.randomUUID(), "DGT 3000", null, null, null,
                                 new BigDecimal("65.00"), 1, new BigDecimal("65.00"))),
                 new BigDecimal("113.00"), new BigDecimal("0.00"), new BigDecimal("21.87"), false, payment, failure, holdUntil,
-                null, List.of());
+                null, List.of(), null);
     }
 
     private static final OrderDetailResponse.PaymentInfo VISA =

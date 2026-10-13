@@ -4,9 +4,10 @@ import TwoFactorPanel from '../components/TwoFactorPanel';
 import { AccountTabs } from '../components/OrderParts';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { useAppSelector } from '../store';
+import { PAGE_META } from '../content/pageMeta';
 
 export default function SecurityPage() {
-  usePageMeta('Sign-in and security', 'How you sign in to Tavla, and two-factor authentication with an authenticator app and backup codes.');
+  usePageMeta(...PAGE_META.security);
   const user = useAppSelector((s) => s.auth.user)!;
   return (
     <main className="acct">

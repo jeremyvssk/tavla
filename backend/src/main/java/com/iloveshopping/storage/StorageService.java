@@ -9,6 +9,13 @@ public interface StorageService {
      */
     String store(byte[] bytes, String extension);
 
-    /** Removes a previously stored file. Unknown or foreign URLs are ignored. */
+    /**
+     * Stores a narrower copy of a file stored with {@link #store}, at that file's URL with "-{width}" before
+     * the extension (/images/products/abc.jpg at 600 → /images/products/abc-600.jpg). The frontend builds
+     * srcset from that pattern.
+     */
+    void storeVariant(String url, int width, byte[] bytes);
+
+    /** Removes a previously stored file and its narrower copies. Unknown or foreign URLs are ignored. */
     void delete(String url);
 }

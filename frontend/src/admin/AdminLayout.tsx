@@ -8,8 +8,8 @@ import { stripeConfigured } from '../lib/stripe';
 import { useAppSelector } from '../store';
 import { can, ROLE_NAMES, Section } from './access';
 
-type Item = { to: string; label: string; icon: IconName; section: Section; count?: (o: Counts) => number };
-type Counts = { toPack: number; reviewsToCheck: number };
+type Item = { to: string; label: string; icon: IconName; section: Section; count?: (o: Counts) => number | null };
+type Counts = { toPack: number | null; reviewsToCheck: number | null };
 
 const GROUPS: { title: string | null; items: Item[] }[] = [
   { title: null, items: [{ to: '/admin', label: 'Overview', icon: 'home', section: 'overview' }] },
@@ -91,7 +91,7 @@ export default function AdminLayout() {
                   {g.title && <h2>{g.title}</h2>}
                   <ul>
                     {items.map((i) => {
-                      const n = counts && i.count ? i.count(counts) : 0;
+                      const n = (counts && i.count ? i.count(counts) : 0) ?? 0;
                       return (
                         <li key={i.to}>
                           <NavLink to={i.to} end={i.to === '/admin'}><Icon name={i.icon} />{i.label}{n > 0 && <small>{n}</small>}</NavLink>

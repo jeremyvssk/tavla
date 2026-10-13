@@ -21,9 +21,10 @@ import java.util.UUID;
 
 /**
  * Reads {@code Authorization: Bearer <jwt>}, verifies it, and populates the security context.
- * A bad, expired, or blocklisted token simply leaves the request unauthenticated — the
- * security chain then returns 401 for protected routes. Tokens are never looked up in the DB;
- * the only stateful check is the Redis blocklist peek for revocation.
+ * A bad, expired, or revoked token simply leaves the request unauthenticated — the security chain
+ * then returns 401 for protected routes. Tokens are never looked up in the DB; the only stateful
+ * check is one Redis round trip for revocation: the token's own JTI (logout) and its user's cut-off
+ * (a role change ends every token issued before it).
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -52,13 +53,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private void authenticate(String token) {
         try {
             Claims claims = jwtService.parse(token).getPayload();
-            if (tokenStore.isAccessTokenBlocklisted(claims.getId())) {
+            UUID userId = UUID.fromString(claims.getSubject());
+            if (tokenStore.isAccessTokenRevoked(claims.getId(), userId, claims.getIssuedAt().toInstant())) {
                 return;
             }
             Role role = Role.valueOf(claims.get("role", String.class));
-            AuthPrincipal principal = new AuthPrincipal(
-                    UUID.fromString(claims.getSubject()), role,
-                    claims.getId(), claims.getExpiration().toInstant());
+            AuthPrincipal principal = new AuthPrincipal(userId, role, claims.getId(),
+                    claims.getExpiration().toInstant(), Boolean.TRUE.equals(claims.get("mfa", Boolean.class)));
             var authentication = new UsernamePasswordAuthenticationToken(
                     principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
             SecurityContextHolder.getContext().setAuthentication(authentication);

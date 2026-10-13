@@ -578,6 +578,8 @@ def render(rows):
     w('ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name;\n')
 
     w("""-- Reviewers. The password hash is not a BCrypt string, so no password can ever log in as them.
+-- Inserted plain here; user/UserEncryptionBackfill encrypts them right after Flyway runs (V16), and the
+-- reviews below find them by their fixed ids.
 INSERT INTO users (id, email, password_hash, full_name, auth_provider, role) VALUES
     ('a0000000-0000-4000-8000-000000000001', 'reviewer-1@seed.iloveshopping.local', '!seed-no-login', 'Mari K.',    'LOCAL', 'CUSTOMER'),
     ('a0000000-0000-4000-8000-000000000002', 'reviewer-2@seed.iloveshopping.local', '!seed-no-login', 'Jaan T.',    'LOCAL', 'CUSTOMER'),
@@ -620,21 +622,31 @@ CREATE TEMP TABLE seed_image (key TEXT, url TEXT, alt_text TEXT, display_order I
         w(',\n'.join(f'({sql(k)}, {sql(u)}, {sql(a[:255])}, {n}, {sql(framing(u))})'
                      for k, u, a, n in image_rows[start:start + 500]) + ';\n')
 
-    w("""INSERT INTO products (id, name, description, price, stock_quantity, category_id, brand_id, attributes, active,
+    w("""-- The SKU is the supplier's code. Eight codes are shared by two listings (a book in two categories), so the
+-- second one gets "-2". A code another product already uses is left empty rather than failing the seed, and
+-- a SKU staff have set is kept. An archived product stays archived.
+INSERT INTO products (id, sku, name, description, price, stock_quantity, category_id, brand_id, attributes, active,
                       weight_kg, width_cm, height_cm, depth_cm, weight_lbs, width_in, height_in, depth_in, created_at, updated_at)
 SELECT md5('seed-product:' || s.key)::uuid,
+       CASE WHEN NOT EXISTS (SELECT 1 FROM products o WHERE lower(o.sku) = lower(s.sku)
+                                                       AND o.id <> md5('seed-product:' || s.key)::uuid) THEN s.sku END,
        s.name, s.description, s.price, s.stock, c.id, b.id, s.attributes, true,
        s.weight_kg, s.width_cm, s.height_cm, s.depth_cm,
        -- Same conversion ProductService applies on every write: metric is the source of truth.
        round(s.weight_kg * 2.20462262, 2), round(s.width_cm / 2.54, 2), round(s.height_cm / 2.54, 2), round(s.depth_cm / 2.54, 2),
        now() - make_interval(hours => s.n * 5), now()
-FROM seed_product s
+FROM (SELECT seed_product.*,
+             (attributes ->> 'supplier_sku')
+             || CASE WHEN row_number() OVER w > 1 THEN '-' || row_number() OVER w ELSE '' END AS sku
+      FROM seed_product
+      WINDOW w AS (PARTITION BY lower(attributes ->> 'supplier_sku') ORDER BY n)) s
 JOIN categories c ON c.slug = s.category
 LEFT JOIN brands b ON b.slug = s.brand
 ON CONFLICT (id) DO UPDATE SET
+    sku = COALESCE(products.sku, EXCLUDED.sku),
     name = EXCLUDED.name, description = EXCLUDED.description, price = EXCLUDED.price,
     stock_quantity = EXCLUDED.stock_quantity, category_id = EXCLUDED.category_id, brand_id = EXCLUDED.brand_id,
-    attributes = EXCLUDED.attributes, active = EXCLUDED.active,
+    attributes = EXCLUDED.attributes, active = EXCLUDED.active AND products.archived_at IS NULL,
     weight_kg = EXCLUDED.weight_kg, width_cm = EXCLUDED.width_cm, height_cm = EXCLUDED.height_cm, depth_cm = EXCLUDED.depth_cm,
     weight_lbs = EXCLUDED.weight_lbs, width_in = EXCLUDED.width_in, height_in = EXCLUDED.height_in, depth_in = EXCLUDED.depth_in,
     updated_at = now();
@@ -663,7 +675,7 @@ SELECT md5(p.id::text || u.id::text)::uuid,
        now() - make_interval(days => (h.pair % 200)::int)
 FROM seed_product s
 JOIN products p ON p.id = md5('seed-product:' || s.key)::uuid
-CROSS JOIN (SELECT id, row_number() OVER (ORDER BY id) AS k FROM users WHERE email LIKE '%@seed.iloveshopping.local') u
+CROSS JOIN (SELECT id, row_number() OVER (ORDER BY id) AS k FROM users WHERE id::text LIKE 'a0000000-0000-4000-8000-%') u
 CROSS JOIN LATERAL (SELECT hashtext(p.id::text)::bigint & 2147483647 AS product,
                            hashtext(p.id::text || u.id::text)::bigint & 2147483647 AS pair) h
 CROSS JOIN LATERAL (SELECT greatest(1, least(5, s.quality + (h.pair % 3)::int - 1)) AS rating) r

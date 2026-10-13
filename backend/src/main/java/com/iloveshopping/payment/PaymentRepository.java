@@ -80,4 +80,10 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
             WHERE status = 'REFUND_DUE' AND updated_at <= now() - make_interval(secs => :ageSeconds)
             ORDER BY updated_at LIMIT :limit""", nativeQuery = true)
     List<UUID> findRefundsDue(long ageSeconds, int limit);
+
+    /** Refunds asked for (REFUND_DUE) or accepted (REFUNDING) but not confirmed, for at least {@code ageSeconds}. */
+    @Query(value = """
+            SELECT order_id FROM payments WHERE status IN ('REFUND_DUE', 'REFUNDING')
+            AND updated_at < now() - make_interval(secs => :ageSeconds)""", nativeQuery = true)
+    List<UUID> findUnconfirmedRefunds(long ageSeconds);
 }

@@ -1,4 +1,4 @@
-// Admin bulk upload: upload a CSV or JSON file, read what the check found, then import it as a background job.
+// Admin bulk upload: upload a CSV or JSON file, read what the check found, then import every row or none.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DragEvent, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -31,14 +31,8 @@ export default function ImportPage() {
   const client = useQueryClient();
   const id = url.get('job');
   const [fileError, setFileError] = useState<string | null>(null);
-  // the job runs on the server; this page only watches it, so leaving and coming back shows where it got to
-  const job = useQuery({
-    queryKey: ['staff', 'import', id],
-    queryFn: () => fetchImport(id!),
-    enabled: !!id,
-    retry: false,
-    refetchInterval: (q) => (q.state.data && ['CHECKING', 'IMPORTING'].includes(q.state.data.status) ? 1500 : false),
-  });
+  // the job is kept on the server, so the URL brings the same check back after a reload
+  const job = useQuery({ queryKey: ['staff', 'import', id], queryFn: () => fetchImport(id!), enabled: !!id, retry: false });
   const upload = useMutation({
     mutationFn: startImport,
     onSuccess: (j) => {
@@ -56,7 +50,7 @@ export default function ImportPage() {
   }
 
   const j = id ? job.data : undefined;
-  const step = !j ? 0 : j.status === 'CHECKING' || j.status === 'CHECKED' ? 1 : 2;
+  const step = !j ? 0 : j.status === 'CHECKED' ? 1 : 2;
 
   return (
     <main className="adm-body">
@@ -79,11 +73,17 @@ export default function ImportPage() {
         })}
       </ol>
       {id && !j && <LoadState query={job} what="the upload" />}
-      {!id && <Upload onPick={pick} pending={upload.isPending} error={fileError ?? (upload.error ? toApiError(upload.error).message : null)} />}
-      {j && (j.status === 'CHECKING' || j.status === 'CHECKED') && <Check job={j} onAnother={() => setUrl({})} />}
-      {j && (j.status === 'IMPORTING' || j.status === 'DONE' || j.status === 'FAILED') && <Result job={j} onAnother={() => setUrl({})} />}
+      {!id && <Upload onPick={pick} pending={upload.isPending} error={fileError ?? (upload.error ? uploadError(upload.error) : null)} />}
+      {j && j.status === 'CHECKED' && <Check job={j} onAnother={() => setUrl({})} />}
+      {j && (j.status === 'DONE' || j.status === 'FAILED') && <Result job={j} onAnother={() => setUrl({})} />}
     </main>
   );
+}
+
+/** A file the server can't read at all says why (an unknown column, not UTF-8, too many rows). */
+function uploadError(err: unknown) {
+  const e = toApiError(err);
+  return e.fields.file ?? e.message;
 }
 
 function Upload({ onPick, pending, error }: { onPick: (f: File | undefined) => void; pending: boolean; error: string | null }) {
@@ -102,8 +102,8 @@ function Upload({ onPick, pending, error }: { onPick: (f: File | undefined) => v
         <label className="idrop" data-over={over ? '' : undefined} onDragOver={(e) => { e.preventDefault(); setOver(true); }}
           onDragLeave={() => setOver(false)} onDrop={drop} aria-describedby={error ? 'up-e' : 'up-h2'}>
           <Icon name="upload" />
-          <b>{pending ? 'Uploading…' : 'Drop a CSV or JSON file here, or choose one'}</b>
-          <small id="up-h2">Up to 10 MB. One product per row, matched on SKU. Photos come from image_url.</small>
+          <b>{pending ? 'Uploading and checking…' : 'Drop a CSV or JSON file here, or choose one'}</b>
+          <small id="up-h2">Up to 10 MB and 5,000 rows. One product per row, matched on SKU. Photos are linked from image_url.</small>
           <input type="file" accept=".csv,.json,text/csv,application/json" className="vh" disabled={pending}
             onChange={(e) => { onPick(e.target.files?.[0]); e.target.value = ''; }} />
         </label>
@@ -130,18 +130,13 @@ function Check({ job: j, onAnother }: { job: ImportJob; onAnother: () => void })
   const go = useMutation({
     mutationFn: () => confirmImport(j.id, onMatch),
     onSuccess: (next) => client.setQueryData(['staff', 'import', j.id], next),
+    // the shop changed since the check: the job now lists the new errors, so show them
+    onError: () => client.invalidateQueries({ queryKey: ['staff', 'import', j.id] }),
   });
   const errorRows = useMutation({ mutationFn: () => fetchImportErrors(j.id), onSuccess: (b) => saveBlob(b, `rows-with-errors-${j.fileName}`) });
-  if (j.status === 'CHECKING') {
-    return (
-      <section className="apanel" aria-labelledby="chk-h" aria-busy="true">
-        <div className="panel-h"><div><h2 id="chk-h">Checking the file</h2><p>Every row is read and tested. Nothing changes yet.</p></div></div>
-        <div className="panel-b imp-b"><FileBox job={j} /><p className="status-line" role="status">Checking {j.rows.toLocaleString('en')} rows…</p></div>
-      </section>
-    );
-  }
   const importing = j.counts.new + (onMatch === 'update' ? j.counts.update : 0);
-  const skipping = j.counts.error + (onMatch === 'skip' ? j.counts.update : 0);
+  const skipping = onMatch === 'skip' ? j.counts.update : 0;
+  const blocked = j.counts.error > 0;
   const changes = allChanges ? j.changes : j.changes.slice(0, SHOWN_CHANGES);
   return (
     <>
@@ -152,8 +147,8 @@ function Check({ job: j, onAnother }: { job: ImportJob; onAnother: () => void })
           <div className="counts">
             <div><b>{j.counts.new.toLocaleString('en')}</b><span>New products</span></div>
             <div className="warn"><b>{j.counts.update.toLocaleString('en')}</b><span>Updates to existing products</span></div>
-            <div className={j.counts.error ? 'bad' : undefined}><b>{j.counts.error.toLocaleString('en')}</b><span>Rows with errors, skipped</span></div>
-            <div><b>{j.counts.photos.toLocaleString('en')}</b><span>Photos to fetch, kept in 3 sizes</span></div>
+            <div className={j.counts.error ? 'bad' : undefined}><b>{j.counts.error.toLocaleString('en')}</b><span>Rows with errors</span></div>
+            <div><b>{j.counts.photos.toLocaleString('en')}</b><span>Photos to link</span></div>
           </div>
           {j.counts.update > 0 && (
             <fieldset className="matchset">
@@ -175,7 +170,7 @@ function Check({ job: j, onAnother }: { job: ImportJob; onAnother: () => void })
       {j.errors.length > 0 && (
         <section className="apanel" aria-labelledby="err-h">
           <div className="panel-h">
-            <div><h2 id="err-h">{j.counts.error} {j.counts.error === 1 ? 'row' : 'rows'} with errors</h2><p>Fix them in the file and upload it again, or import the rest now.</p></div>
+            <div><h2 id="err-h">{j.counts.error} {j.counts.error === 1 ? 'row' : 'rows'} with errors</h2><p>Nothing is imported while any row has an error. Fix them in the file and upload it again.</p></div>
             <button className="btn btn--ghost btn--sm" type="button" disabled={errorRows.isPending} onClick={() => errorRows.mutate()}>Download these rows</button>
           </div>
           <div className="tblw">
@@ -227,9 +222,10 @@ function Check({ job: j, onAnother }: { job: ImportJob; onAnother: () => void })
         <button className="btn btn--ghost" type="button" onClick={onAnother}>Back</button>
         <span className="row">
           {go.error ? <p className="err" role="alert"><Icon name="alert" width={2} />{toApiError(go.error).message}</p>
-            : <span className="hint">Runs in the background. You can leave this page; the result shows up here.</span>}
-          <button className="btn" type="button" disabled={go.isPending || importing === 0} onClick={() => go.mutate()}>
-            {importing === 0 ? 'Nothing to import' : `Import ${importing.toLocaleString('en')} ${importing === 1 ? 'row' : 'rows'}${skipping ? `, skip ${skipping.toLocaleString('en')}` : ''}`}
+            : <span className="hint">{blocked ? 'Fix the rows with errors first.' : 'Every row is imported, or none of them if anything goes wrong.'}</span>}
+          <button className="btn" type="button" disabled={go.isPending || blocked || importing === 0} onClick={() => go.mutate()}>
+            {go.isPending ? 'Importing…' : blocked ? 'Fix the errors to import' : importing === 0 ? 'Nothing to import'
+              : `Import ${importing.toLocaleString('en')} ${importing === 1 ? 'row' : 'rows'}${skipping ? `, skip ${skipping.toLocaleString('en')}` : ''}`}
           </button>
         </span>
       </div>
@@ -238,34 +234,25 @@ function Check({ job: j, onAnother }: { job: ImportJob; onAnother: () => void })
 }
 
 function Result({ job: j, onAnother }: { job: ImportJob; onAnother: () => void }) {
-  const total = j.counts.new + (j.onMatch === 'update' ? j.counts.update : 0);
-  const head = j.status === 'IMPORTING' ? 'Importing' : j.status === 'DONE' ? 'Imported' : 'The import stopped';
   return (
-    <section className="apanel" aria-labelledby="res-h" aria-busy={j.status === 'IMPORTING'}>
+    <section className="apanel" aria-labelledby="res-h">
       <div className="panel-h">
         <div>
-          <h2 id="res-h">{head}</h2>
-          <p>{j.status === 'IMPORTING' ? 'You can leave this page. The job keeps going and the result shows up here.' : `From ${j.fileName}.`}</p>
+          <h2 id="res-h">{j.status === 'DONE' ? 'Imported' : 'The import stopped'}</h2>
+          <p>From {j.fileName}.</p>
         </div>
       </div>
       <div className="panel-b imp-b">
         <FileBox job={j} />
-        {j.status === 'IMPORTING' && (
-          <div className="imp-prog" role="progressbar" aria-label="Rows imported" aria-valuemin={0} aria-valuemax={total} aria-valuenow={j.counts.done}>
-            <i style={{ transform: `scaleX(${total ? j.counts.done / total : 0})` }} />
-          </div>
-        )}
         <div role="status">
           {j.status === 'FAILED'
-            ? <p className="msg msg--bad"><Icon name="alert" />{j.failure ?? 'Something went wrong on the server.'} {j.counts.done.toLocaleString('en')} rows were imported before it stopped.</p>
-            : <p>{`${j.counts.done.toLocaleString('en')} of ${total.toLocaleString('en')} rows ${j.status === 'DONE' ? 'imported' : 'so far'}.`}</p>}
+            ? <p className="msg msg--bad"><Icon name="alert" />{j.failure ?? 'Something went wrong on the server.'} Nothing was imported.</p>
+            : <p>{`${j.counts.done.toLocaleString('en')} ${j.counts.done === 1 ? 'product' : 'products'} added or updated.`}</p>}
         </div>
-        {j.status !== 'IMPORTING' && (
-          <div className="row">
-            <Link className="btn" to="/admin/products?sort=newest">See the products</Link>
-            <button className="btn btn--ghost" type="button" onClick={onAnother}>Upload another file</button>
-          </div>
-        )}
+        <div className="row">
+          <Link className="btn" to="/admin/products?sort=newest">See the products</Link>
+          <button className="btn btn--ghost" type="button" onClick={onAnother}>Upload another file</button>
+        </div>
       </div>
     </section>
   );

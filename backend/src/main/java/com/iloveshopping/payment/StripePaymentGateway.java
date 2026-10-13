@@ -12,6 +12,7 @@ import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.PaymentIntentRetrieveParams;
 import com.stripe.param.RefundCreateParams;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -21,6 +22,7 @@ import java.util.UUID;
  * unconfigured copy of the shop refuses orders cleanly instead of half-placing them.
  */
 @Component
+@ConditionalOnProperty(name = "app.payments.fake", havingValue = "false", matchIfMissing = true)
 public class StripePaymentGateway implements PaymentGateway {
 
     private final StripeClient client;
@@ -111,6 +113,28 @@ public class StripePaymentGateway implements PaymentGateway {
                 return RefundStatus.SUCCEEDED;
             }
             throw unavailable("refund a PaymentIntent", e);
+        }
+    }
+
+    @Override
+    public RefundStatus refundPart(String intentId, UUID refundId, long amountCents) {
+        RefundCreateParams params = RefundCreateParams.builder()
+                .setPaymentIntent(intentId)
+                .setAmount(amountCents)
+                .setReason(RefundCreateParams.Reason.REQUESTED_BY_CUSTOMER)
+                .putMetadata("refund_id", refundId.toString())
+                .build();
+        // one key per refund: the order may have several part refunds, but each is made once
+        RequestOptions options = RequestOptions.builder().setIdempotencyKey("refund-part-" + refundId).build();
+        try {
+            Refund refund = client().v1().refunds().create(params, options);
+            return switch (refund.getStatus()) {
+                case "succeeded" -> RefundStatus.SUCCEEDED;
+                case "pending", "requires_action" -> RefundStatus.PENDING;
+                default -> throw new PaymentUnavailableException("Stripe did not refund: the refund is " + refund.getStatus(), null);
+            };
+        } catch (StripeException e) {
+            throw unavailable("refund part of a PaymentIntent", e);
         }
     }
 

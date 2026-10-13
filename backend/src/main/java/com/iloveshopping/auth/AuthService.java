@@ -1,6 +1,11 @@
 // Orchestrates registration, login, refresh, and logout over the user and token services.
 package com.iloveshopping.auth;
 
+import com.iloveshopping.audit.AuditEvent;
+import com.iloveshopping.audit.AuditKind;
+import com.iloveshopping.audit.AuditLog;
+import com.iloveshopping.audit.AuditTarget;
+import com.iloveshopping.auth.dto.TwoFactorEnableResponse;
 import com.iloveshopping.auth.exception.InvalidCredentialsException;
 import com.iloveshopping.auth.exception.InvalidRefreshTokenException;
 import com.iloveshopping.auth.exception.InvalidTwoFactorCodeException;
@@ -13,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -27,16 +33,18 @@ public class AuthService {
     private final GoogleTokenVerifier googleTokenVerifier;
     private final TwoFactorService twoFactorService;
     private final AccountThrottle accountThrottle;
+    private final AuditLog auditLog;
 
     public AuthService(UserService userService, JwtService jwtService, TokenStoreService tokenStore,
                        GoogleTokenVerifier googleTokenVerifier, TwoFactorService twoFactorService,
-                       AccountThrottle accountThrottle) {
+                       AccountThrottle accountThrottle, AuditLog auditLog) {
         this.userService = userService;
         this.jwtService = jwtService;
         this.tokenStore = tokenStore;
         this.googleTokenVerifier = googleTokenVerifier;
         this.twoFactorService = twoFactorService;
         this.accountThrottle = accountThrottle;
+        this.auditLog = auditLog;
     }
 
     public User register(String email, String rawPassword, String fullName) {
@@ -60,13 +68,14 @@ public class AuthService {
         }
         User user = found.get();
         if (!userService.passwordMatches(user, rawPassword)) {
+            refusedStaffSignIn(user, "Wrong password", false);
             throw new InvalidCredentialsException();
         }
         accountThrottle.loginSucceeded(email, clientIp);
         if (user.isTwoFactorEnabled()) {
             return LoginResult.twoFactorRequired(twoFactorService.startChallenge(user));
         }
-        return LoginResult.authenticated(issueTokens(user));
+        return LoginResult.authenticated(issueTokens(user, false));
     }
 
     /**
@@ -82,33 +91,39 @@ public class AuthService {
             // A wrong code leaves the challenge usable so a typo is not fatal — but only up to a
             // point, or the five-minute window becomes an offer to guess all million codes.
             twoFactorService.registerFailedAttempt(challenge);
+            // the password was right, so this one is worth a staff member's attention
+            refusedStaffSignIn(user, "Wrong two-factor code", true);
             throw new InvalidTwoFactorCodeException();
         }
         twoFactorService.consumeChallenge(challenge);
-        return issueTokens(user);
+        return issueTokens(user, true);
     }
 
-    /** Verifies a Google ID token, finds or creates the matching user, and issues our own tokens. */
+    /**
+     * Verifies a Google ID token, finds or creates the matching user, and issues our own tokens. Never a
+     * second factor: a Google account has no password to set 2FA up with, which is also why it can't be
+     * given a staff role (StaffUserService).
+     */
     public AuthTokens oauthLoginGoogle(String idToken) {
         OAuthUserInfo info = googleTokenVerifier.verify(idToken);
         User user = userService.findOrCreateOAuthUser(info);
-        return issueTokens(user);
+        return issueTokens(user, false);
     }
 
     /**
      * Validates the presented refresh token, rotates it (single-use), and issues a fresh
      * access token. The user is reloaded so the new access token reflects the current role
-     * and a since-deleted account is rejected.
+     * and a since-deleted account is rejected. The session keeps its second factor, if it had one.
      */
     public AuthTokens refresh(String rawRefreshToken) {
-        UUID userId = tokenStore.findUserIdByRefreshToken(rawRefreshToken)
+        TokenStoreService.Session session = tokenStore.findSessionByRefreshToken(rawRefreshToken)
                 .orElseGet(() -> {
                     detectReuse(rawRefreshToken);
                     throw new InvalidRefreshTokenException();
                 });
-        String newRefreshToken = tokenStore.rotateRefreshToken(userId, rawRefreshToken);
-        User user = userService.getById(userId);
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole());
+        String newRefreshToken = tokenStore.rotateRefreshToken(session, rawRefreshToken);
+        User user = userService.getById(session.userId());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole(), session.mfa());
         return new AuthTokens(accessToken, newRefreshToken);
     }
 
@@ -121,6 +136,23 @@ public class AuthService {
         if (rawRefreshToken != null) {
             tokenStore.revokeRefreshToken(principal.userId(), rawRefreshToken);
         }
+    }
+
+    /**
+     * Switches 2FA on with the first code from the app (setup already re-checked the password). That code
+     * is a second factor, so the session it was typed in has now passed one: the refresh token, when sent,
+     * is marked, and the answer carries a fresh access token that says so.
+     */
+    public TwoFactorEnableResponse enableTwoFactor(UUID userId, String code, String rawRefreshToken) {
+        User user = userService.getById(userId);
+        List<String> backupCodes = twoFactorService.enable(user, code);
+        if (rawRefreshToken != null) {
+            tokenStore.markSecondFactor(userId, rawRefreshToken);
+        }
+        if (user.getRole().isStaff()) {
+            auditLog.recordFor(userId, user.getRole(), AuditEvent.of(AuditKind.ACCESS, "Turned on two-factor"));
+        }
+        return new TwoFactorEnableResponse(backupCodes, jwtService.generateAccessToken(userId, user.getRole(), true));
     }
 
     public java.time.Duration refreshTokenTtl() {
@@ -139,9 +171,24 @@ public class AuthService {
         });
     }
 
-    private AuthTokens issueTokens(User user) {
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole());
-        String refreshToken = tokenStore.issueRefreshToken(user.getId());
+    /** A sign-in that succeeded: tokens for a new session, the sign-in time, and a log entry for staff. */
+    private AuthTokens issueTokens(User user, boolean secondFactor) {
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getRole(), secondFactor);
+        String refreshToken = tokenStore.issueRefreshToken(new TokenStoreService.Session(user.getId(), secondFactor));
+        userService.recordSignIn(user.getId());
+        if (user.getRole().isStaff()) {
+            AuditEvent signedIn = AuditEvent.of(AuditKind.ACCESS, "Signed in");
+            auditLog.recordFor(user.getId(), user.getRole(), secondFactor ? signedIn.detail("Password and two-factor code")
+                    : signedIn.flag("Two-factor not set up yet", false));
+        }
         return new AuthTokens(accessToken, refreshToken);
+    }
+
+    /** A staff account someone failed to sign in to: who tried isn't known, so the account is the target. */
+    private void refusedStaffSignIn(User user, String why, boolean serious) {
+        if (user.getRole().isStaff()) {
+            auditLog.recordFor(null, null, AuditEvent.of(AuditKind.ACCESS, "Sign-in to {target} refused")
+                    .target(AuditTarget.USER, user.getId(), null).flag(why, serious));
+        }
     }
 }

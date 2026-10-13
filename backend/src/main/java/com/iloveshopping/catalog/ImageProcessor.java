@@ -9,12 +9,15 @@ import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * The declared Content-Type and the filename are ignored: both are client-controlled. The type
@@ -29,10 +32,19 @@ public class ImageProcessor {
     static final int MAX_SIDE = 8_000;
     static final long MAX_PIXELS = 40_000_000L;
 
+    /**
+     * The narrower copies written beside each upload, for srcset. 160 covers a cart or search thumbnail
+     * (at most 80 px wide, twice for high-density screens), 600 a catalog tile (about 290 px at 1440),
+     * 1200 the product page's main photo (about 600 px). A width the original doesn't reach is skipped:
+     * an upscaled copy would be bigger and no sharper, and nginx falls back to the original for it.
+     */
+    public static final int[] WIDTHS = {160, 600, 1200};
+
     private static final byte[] PNG_MAGIC = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
 
-    public record ProcessedImage(byte[] bytes, String extension) {
+    /** The re-encoded original, and the narrower copies keyed by their width. */
+    public record ProcessedImage(byte[] bytes, String extension, Map<Integer, byte[]> variants) {
     }
 
     private enum Format {
@@ -50,7 +62,39 @@ public class ImageProcessor {
     public ProcessedImage process(byte[] data) {
         Format format = sniff(data);
         BufferedImage image = decode(data, format);
-        return new ProcessedImage(encode(image, format), format.extension);
+        Map<Integer, byte[]> variants = new LinkedHashMap<>();
+        for (int width : WIDTHS) {
+            if (width < image.getWidth()) {
+                variants.put(width, encode(resize(image, width), format));
+            }
+        }
+        return new ProcessedImage(encode(image, format), format.extension, variants);
+    }
+
+    /**
+     * Halves the image until it is within twice the target, then draws the last step bilinearly. One big
+     * bilinear jump from 4000 px to 160 skips most source pixels and looks jagged; halving averages them.
+     */
+    static BufferedImage resize(BufferedImage image, int targetWidth) {
+        int targetHeight = Math.max(1, Math.round((float) image.getHeight() * targetWidth / image.getWidth()));
+        BufferedImage current = image;
+        int w = image.getWidth();
+        int h = image.getHeight();
+        do {
+            w = Math.max(targetWidth, w / 2);
+            h = w == targetWidth ? targetHeight : Math.max(targetHeight, h / 2);
+            int type = current.getColorModel().hasAlpha() ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+            BufferedImage next = new BufferedImage(w, h, type);
+            Graphics2D g = next.createGraphics();
+            try {
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                g.drawImage(current, 0, 0, w, h, null);
+            } finally {
+                g.dispose();
+            }
+            current = next;
+        } while (w != targetWidth);
+        return current;
     }
 
     private Format sniff(byte[] data) {

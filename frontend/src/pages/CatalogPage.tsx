@@ -8,6 +8,8 @@ import Icon, { Star } from '../components/Icon';
 import ProductCard from '../components/ProductCard';
 import ProductListRow from '../components/ProductListRow';
 import { formatBand } from '../lib/format';
+import { usePageMeta } from '../hooks/usePageMeta';
+import { catalogMeta } from '../content/pageMeta';
 
 /** Products per "Show more": divides evenly into rows of 2, 3 and 4 cards. */
 const BATCH = 36;
@@ -93,10 +95,7 @@ export default function CatalogPage() {
   const path = chainTo(tree, params.category);
   const current = path[path.length - 1];
 
-  useEffect(() => {
-    document.title = `${params.q ? `Search: ${params.q}` : current?.name ?? 'All products'} · Tavla`;
-    return () => { document.title = 'Tavla · Chess, Go and Backgammon'; };
-  }, [params.q, current?.name]);
+  usePageMeta(...catalogMeta(params.q, current?.name, data?.totalItems));
 
   // The filter column scrolls on its own. Its height is the room it really has on screen: from where it
   // sits now (lower than its sticky spot while the page is at the top) down to the window's bottom, or to

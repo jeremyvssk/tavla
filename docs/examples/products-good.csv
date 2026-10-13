@@ -1,0 +1,6 @@
+sku,name,description,price,stock,category,brand,ean,weight_kg,width_cm,height_cm,depth_cm,variant_group,variant,image_url,image_alt
+EX-WALNUT-45,Walnut tournament chessboard 45 cm,"Solid walnut and maple, 50 mm squares, oiled finish.",89.00,12,wooden-boards,wycliffe-brothers,,1.8,45,2,45,,,https://cdn.shopify.com/s/files/1/0876/1176/files/example-board.jpg,Walnut chessboard seen from above
+EX-CLOCK-DGT,DGT 2010 chess clock,"FIDE approved digital clock with delay and increment.",79.90,25,digital-clocks,dgt,8717742750161,0.4,18,7,10,,,,
+EX-STONES-RED,Yunzi Go stones (red bowls),"Single convex stones, 9.2 mm, in two red bowls.",64.50,8,go-stones,yellow-mountain-imports,,2.1,14,9,14,yunzi-stones,Colour: Red,,
+EX-STONES-BLK,Yunzi Go stones (black bowls),"Single convex stones, 9.2 mm, in two black bowls.",64.50,5,go-stones,yellow-mountain-imports,,2.1,14,9,14,yunzi-stones,Colour: Black,,
+EX-TRAVEL-BG,Travel backgammon set,"Magnetic travel set in a zip case.",24.00,30,classic-backgammon,,,0.6,26,4,17,,,,

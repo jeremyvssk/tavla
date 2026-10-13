@@ -1,17 +1,17 @@
-// Typed calls for the admin area. Product, image, brand and category writes use endpoints that exist today;
-// everything under /staff is PLANNED: the shape the admin pages expect, for the backend to implement.
+// Typed calls for the admin area: product, image, brand and category writes on the shop's own paths, the rest under /staff.
 // /staff and not /admin, because /admin is the admin's own SPA path and nginx can only route one of them.
 import { isAxiosError } from 'axios';
 import type { ImageFraming } from '../lib/framing';
-import type { CategoryNode, CategoryRef, Page, Review } from './catalog';
+import type { CategoryNode, CategoryRef, Page, ProductDetail, Review } from './catalog';
 import { searchProducts } from './catalog';
 import { api } from './client';
+import type { DeliveryOption, DeliverySettings } from './delivery';
 import type { OrderDetail, OrderStatus, OrderSummary } from './orders';
 
 export type StaffRole = 'ADMIN' | 'SUPPORT' | 'SALES';
 export type Role = 'CUSTOMER' | StaffRole;
 
-// ---- products (exist: POST/PUT/DELETE /products, POST/DELETE /products/{id}/images) ----
+// ---- products ----
 
 /** Mirrors the backend's ProductRequest: every field a client may write, metric only. */
 export interface ProductInput {
@@ -27,6 +27,13 @@ export interface ProductInput {
   widthCm: number | null;
   heightCm: number | null;
   depthCm: number | null;
+  /** unique ignoring case; null for none */
+  sku: string | null;
+}
+
+/** One product as staff see it: hidden and archived ones too. */
+export async function fetchStaffProduct(id: string): Promise<ProductDetail> {
+  return (await api.get(`/staff/products/${encodeURIComponent(id)}`)).data;
 }
 
 export async function createProduct(input: ProductInput): Promise<{ id: string }> {
@@ -85,8 +92,8 @@ export interface StaffProductParams {
 }
 
 /**
- * PLANNED: GET /staff/products. Until it exists the shop's own search stands in: active products only,
- * 48 a page, no SKU or exact stock, no counts per state, and `planned` says so.
+ * GET /staff/products. If the server answers 404 (an older backend), the shop's own search stands in:
+ * active products only, 48 a page, no SKU or exact stock, no counts per state, and `planned` says so.
  */
 export async function fetchStaffProducts(params: StaffProductParams): Promise<Page<StaffProductRow> & { counts: Record<ProductState, number> | null; planned: boolean }> {
   try {
@@ -110,12 +117,12 @@ export type BulkProductChange =
   | { action: 'move'; categoryId: number }
   | { action: 'price'; mode: 'set' | 'raise' | 'lower'; value: number };
 
-/** PLANNED: one change to many products; Archive uses DELETE /products/{id}, which exists. */
+/** One change to many products, all or nothing; Archive uses DELETE /products/{id}. Sales get 403 price_change_too_large past ±50%. */
 export async function bulkProducts(ids: string[], change: BulkProductChange): Promise<{ changed: number }> {
   return (await api.post('/staff/products/bulk', { ids, ...change })).data;
 }
 
-/** PLANNED: the filtered list as a CSV file. */
+/** The filtered list as a CSV file in the bulk upload's columns, so it can be edited and uploaded again. */
 export async function exportProducts(params: StaffProductParams): Promise<Blob> {
   return (await api.get('/staff/products/export', { params, responseType: 'blob' })).data;
 }
@@ -124,7 +131,7 @@ export async function fetchBrands(): Promise<{ id: number; name: string; slug: s
   return (await api.get('/brands')).data;
 }
 
-// ---- categories (exists: POST /categories; PLANNED: the staff tree, PUT, DELETE and moving) ----
+// ---- categories ----
 
 /** A shelf as staff see it: hidden ones too, with how many products sit in it and the shelves below. */
 export interface StaffCategory extends CategoryRef {
@@ -134,7 +141,7 @@ export interface StaffCategory extends CategoryRef {
   children: StaffCategory[];
 }
 
-/** PLANNED: until it exists, the shop's own tree stands in (active shelves only, no counts). */
+/** GET /staff/categories; on a 404 (an older backend) the shop's own tree stands in (active shelves only, no counts). */
 export async function fetchStaffCategories(): Promise<{ tree: StaffCategory[]; planned: boolean }> {
   try {
     return { tree: (await api.get('/staff/categories')).data, planned: false };
@@ -151,23 +158,27 @@ export async function createCategory(input: { name: string; slug: string; parent
   return (await api.post('/categories', input)).data;
 }
 
-/** PLANNED */
+/** A shelf can't go under itself or a shelf below it (400 on parentId). */
 export async function updateCategory(id: number, input: { name: string; slug: string; parentId: number | null; active: boolean }) {
   return (await api.put(`/categories/${id}`, input)).data;
 }
 
-/** PLANNED: puts the shelf under `parentId`, just before `beforeId` (null: last). */
+/** Puts the shelf under `parentId`, just before `beforeId` (null: last). */
 export async function moveCategory(id: number, parentId: number | null, beforeId: number | null) {
   return (await api.put(`/categories/${id}/position`, { parentId, beforeId })).data;
 }
 
-/** PLANNED: refused (409 category_not_empty) while products or sub-categories are in it. */
+/** Refused (409 category_not_empty) while products, archived ones too, or sub-categories are in it. */
 export async function deleteCategory(id: number) {
   await api.delete(`/categories/${id}`);
 }
 
-// ---- everything below is PLANNED ----
+// ---- the other staff areas ----
 
+/**
+ * A number from an area the role can't open is null (Sales isn't told how many reviews wait). The sales figures
+ * are for every staff member. recent: everyone's changes for an admin, a staff member's own otherwise.
+ */
 export interface Overview {
   salesToday: number;
   ordersToday: number;
@@ -175,14 +186,15 @@ export interface Overview {
   orders7d: number;
   failedPaymentsToday: number;
   paymentsTriedToday: number;
-  toPack: number;
+  toPack: number | null;
   oldestToPack: string | null;
-  refundsUnconfirmed: number;
+  refundsUnconfirmed: number | null;
   /** new and reported reviews nobody has looked at yet */
-  reviewsToCheck: number;
-  reviewsReported: number;
-  lowStock: number;
-  staffWithout2fa: number;
+  reviewsToCheck: number | null;
+  reviewsReported: number | null;
+  lowStock: number | null;
+  staffWithout2fa: number | null;
+  /** empty for a role without the order desk */
   latestOrders: AdminOrderRow[];
   recent: AuditEntry[];
 }
@@ -256,28 +268,7 @@ export async function refundOrder(id: string, lines: { productId: string; quanti
   return (await api.post(`/staff/orders/${encodeURIComponent(id)}/refunds`, { lines, shipping, reason })).data as AdminOrderDetail;
 }
 
-export interface DeliveryOption {
-  id: string;
-  name: string;
-  price: number;
-  /** "15:00": orders placed before it on a working day leave the same day */
-  orderBy: string;
-  daysMin: number;
-  daysMax: number;
-  /** ISO codes, e.g. EE */
-  countries: string[];
-  /** shown at checkout; off hides it without deleting it */
-  active: boolean;
-  /** free once the order reaches the free-shipping limit */
-  freeOverLimit: boolean;
-}
-
-export interface DeliverySettings {
-  /** the one limit every page quotes ("Free delivery from €100") */
-  freeShipping: { from: number; on: boolean };
-  /** in the order shoppers see them */
-  options: DeliveryOption[];
-}
+export type { DeliveryOption, DeliverySettings } from './delivery';
 
 export async function fetchDelivery(): Promise<DeliverySettings> {
   return (await api.get('/staff/delivery')).data;
@@ -322,14 +313,14 @@ export async function fetchUsers(params: UserParams): Promise<Page<StaffUser> & 
   return (await api.get('/staff/users', { params })).data;
 }
 
-/** Needs the changer's own 2FA code. Nobody changes their own role; the last admin can't be demoted. */
+/** Needs the changer's own 2FA code. Nobody changes their own role, and Admin is never given or taken here (409 admin_role_locked). */
 export async function changeRole(userId: string, role: Role, code: string): Promise<StaffUser> {
   return (await api.put(`/staff/users/${encodeURIComponent(userId)}/role`, { role, code })).data;
 }
 
 export type ModerationState = 'todo' | 'reported' | 'live' | 'hidden';
 
-export interface ModerationReview extends Review {
+export interface ModerationReview extends Omit<Review, 'myVote' | 'published'> {
   productId: string;
   productName: string;
   productImageUrl: string | null;
@@ -423,7 +414,8 @@ export interface ImportJob {
   sizeBytes: number;
   uploadedAt: string;
   rows: number;
-  status: 'CHECKING' | 'CHECKED' | 'IMPORTING' | 'DONE' | 'FAILED';
+  /** CHECKED: waiting for Import. Both steps run inside the request, so there is no "in progress" state. */
+  status: 'CHECKED' | 'DONE' | 'FAILED';
   /** a row whose SKU is already in the shop updates that product, or is skipped */
   onMatch: 'update' | 'skip';
   counts: { new: number; update: number; error: number; photos: number; done: number };
@@ -433,7 +425,10 @@ export interface ImportJob {
   failure: string | null;
 }
 
-/** Uploads the file and starts the check (a dry run) as a queued job; nothing changes until confirmImport. Matches on SKU. */
+/**
+ * Uploads the file and checks it (a dry run); nothing changes until confirmImport. Matches on SKU. A file that
+ * can't be read at all is a 400 invalid_import_file with the reason in fields.file.
+ */
 export async function startImport(file: File): Promise<ImportJob> {
   const body = new FormData();
   body.append('file', file);
@@ -444,6 +439,10 @@ export async function fetchImport(id: string): Promise<ImportJob> {
   return (await api.get(`/staff/imports/${encodeURIComponent(id)}`)).data;
 }
 
+/**
+ * All or nothing: 409 import_has_errors while the check lists errors, 409 import_outdated when the shop changed
+ * since the check (the job then lists the new errors), 409 import_not_ready once it ran.
+ */
 export async function confirmImport(id: string, onMatch: ImportJob['onMatch']): Promise<ImportJob> {
   return (await api.post(`/staff/imports/${encodeURIComponent(id)}/confirm`, { onMatch })).data;
 }

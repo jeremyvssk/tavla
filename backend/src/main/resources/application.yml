@@ -57,9 +57,10 @@ spring:
       fail-on-unknown-properties: true
 
   servlet:
+    # 10 MB for the bulk upload (catalog/imports); a product photo is held to 5 MB by ProductImageService.
     multipart:
-      max-file-size: 5MB
-      max-request-size: 10MB
+      max-file-size: 10MB
+      max-request-size: 11MB
 
 server:
   port: 8080
@@ -83,6 +84,9 @@ app:
       client-id: ${GOOGLE_CLIENT_ID}
   mail:
     from: ${MAIL_FROM:noreply@iloveshopping.local}
+  support:
+    # Where contact form messages are emailed (MailHog's inbox in development).
+    inbox: ${SUPPORT_INBOX:support@iloveshopping.local}
   frontend:
     reset-url: ${FRONTEND_RESET_URL:http://localhost:5173/reset}
     # Where the links in order emails point.
@@ -98,6 +102,9 @@ app:
   rate-limit:
     # Integration tests switch this off: they share one Redis and all arrive from 127.0.0.1.
     enabled: ${RATE_LIMIT_ENABLED:true}
+    # Multiplies every bucket's size and refill. 1 everywhere except the load test's stack (loadtest/),
+    # where all of k6's virtual users arrive from one address. Never a header: any client could send one.
+    multiplier: ${RATE_LIMIT_MULTIPLIER:1}
   two-factor:
     issuer: ${TWO_FACTOR_ISSUER:i-love-shopping}
   cart:
@@ -118,6 +125,10 @@ app:
     # The whsec_... that `stripe listen` prints; start.sh fills it in. Blank: every webhook is refused.
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
     currency: eur
+  payments:
+    # true swaps Stripe for payment/FakePaymentGateway, which answers at once and moves no money. Only the
+    # load test's stack sets it (loadtest/), so thousands of orders don't hit Stripe's test-mode rate limits.
+    fake: ${PAYMENTS_FAKE:false}
   storage:
     # The product_images_data volume; nginx serves the same directory at /images.
     images-dir: ${IMAGES_DIR:/var/app/images}

@@ -1,24 +1,35 @@
-// Product detail reads, the cart's product lookups, reserving stock for orders, and admin create, update and delete.
+// Product detail reads, the cart's product lookups, reserving stock for orders, and staff create, update and delete.
 package com.iloveshopping.catalog;
 
+import com.iloveshopping.audit.AuditEvent;
+import com.iloveshopping.audit.AuditKind;
+import com.iloveshopping.audit.AuditLog;
+import com.iloveshopping.audit.AuditTarget;
 import com.iloveshopping.catalog.dto.Measurements;
 import com.iloveshopping.catalog.dto.ProductDetail;
 import com.iloveshopping.catalog.dto.ProductForCart;
 import com.iloveshopping.catalog.dto.ProductImageResponse;
 import com.iloveshopping.catalog.dto.ProductRequest;
 import com.iloveshopping.catalog.dto.ProductVariant;
+import com.iloveshopping.catalog.exception.CatalogConflictException;
 import com.iloveshopping.catalog.exception.CatalogNotFoundException;
 import com.iloveshopping.storage.StorageService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -30,21 +41,31 @@ public class ProductService {
     private final CategoryService categoryService;
     private final BrandService brandService;
     private final StorageService storageService;
+    private final ProductUsage productUsage;
+    private final AuditLog auditLog;
 
     public ProductService(ProductRepository productRepository, ProductImageRepository imageRepository,
                           CategoryService categoryService, BrandService brandService,
-                          StorageService storageService) {
+                          StorageService storageService, ProductUsage productUsage, AuditLog auditLog) {
         this.productRepository = productRepository;
         this.imageRepository = imageRepository;
         this.categoryService = categoryService;
         this.brandService = brandService;
         this.storageService = storageService;
+        this.productUsage = productUsage;
+        this.auditLog = auditLog;
     }
 
     /** Inactive products 404 exactly like missing ones, so a hidden product can't be probed for. */
     @Transactional(readOnly = true)
     public ProductDetail getDetail(UUID id) {
         return toDetail(productRepository.findByIdAndActiveTrue(id).orElseThrow(ProductService::notFound));
+    }
+
+    /** For the staff's edit page: hidden and archived products too. */
+    @Transactional(readOnly = true)
+    public ProductDetail getStaffDetail(UUID id) {
+        return toDetail(productRepository.findById(id).orElseThrow(ProductService::notFound));
     }
 
     /**
@@ -96,14 +117,68 @@ public class ProductService {
     public ProductDetail create(ProductRequest request) {
         Product product = new Product();
         apply(product, request);
-        return toDetail(productRepository.saveAndFlush(product));
+        Product saved = saveChecked(product);
+        auditLog.record(AuditEvent.of(AuditKind.PRODUCTS, "Added {target}").target(AuditTarget.PRODUCT, saved.getId(), saved.getName()));
+        return toDetail(saved);
     }
 
+    /** A price moved further than PriceGuard allows Sales is refused before anything is written. */
     @Transactional
     public ProductDetail update(UUID id, ProductRequest request) {
         Product product = productRepository.findById(id).orElseThrow(ProductService::notFound);
+        PriceGuard.check(product.getPrice(), request.price());
+        BigDecimal priceBefore = product.getPrice();
+        Map<String, Object> before = snapshot(product);
         apply(product, request);
-        return toDetail(productRepository.saveAndFlush(product));
+        Product saved = saveChecked(product);
+        List<String> changed = new ArrayList<>();
+        snapshot(saved).forEach((field, value) -> {
+            if (!Objects.equals(before.get(field), value)) {
+                changed.add(field);
+            }
+        });
+        if (changed.remove("price")) {
+            AuditEvent event = AuditEvent.of(AuditKind.PRODUCTS, "Changed the price of {target}")
+                    .target(AuditTarget.PRODUCT, saved.getId(), saved.getName()).change(euros(priceBefore), euros(saved.getPrice()));
+            auditLog.record(changed.isEmpty() ? event : event.detail("Also changed: " + String.join(", ", changed)));
+        } else if (!changed.isEmpty()) {
+            auditLog.record(AuditEvent.of(AuditKind.PRODUCTS, "Edited {target}")
+                    .target(AuditTarget.PRODUCT, saved.getId(), saved.getName()).detail("Changed: " + String.join(", ", changed)));
+        }
+        return toDetail(saved);
+    }
+
+    /**
+     * For the bulk upload, which checks the whole file, guards prices and writes one audit entry for the
+     * file itself. Creates a product when {@code id} is null. Not flushed: the import flushes once at the end.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public UUID saveFromImport(UUID id, ProductRequest request) {
+        Product product = id == null ? new Product() : productRepository.findById(id).orElseThrow(ProductService::notFound);
+        apply(product, request);
+        return productRepository.save(product).getId();
+    }
+
+    /**
+     * Archived when any order points at it, so the order keeps its link and the product its history;
+     * deleted otherwise. The answer says which.
+     */
+    @Transactional
+    public boolean delete(UUID id) {
+        Product product = productRepository.findById(id).orElseThrow(ProductService::notFound);
+        if (!productUsage.ordered(List.of(id)).isEmpty()) {
+            if (product.getArchivedAt() == null) {
+                product.setActive(false);
+                product.setArchivedAt(Instant.now());
+                productRepository.save(product);
+                auditLog.record(AuditEvent.of(AuditKind.PRODUCTS, "Archived {target}")
+                        .target(AuditTarget.PRODUCT, id, product.getName()).detail("In past orders, so kept"));
+            }
+            return true;
+        }
+        hardDelete(product);
+        auditLog.record(AuditEvent.of(AuditKind.PRODUCTS, "Deleted {target}").target(AuditTarget.PRODUCT, id, product.getName()));
+        return false;
     }
 
     /**
@@ -111,9 +186,8 @@ public class ProductService {
      * only after the transaction commits: deleting them first and then rolling back would leave
      * rows pointing at files that no longer exist.
      */
-    @Transactional
-    public void delete(UUID id) {
-        Product product = productRepository.findById(id).orElseThrow(ProductService::notFound);
+    private void hardDelete(Product product) {
+        UUID id = product.getId();
         List<String> urls = imageRepository.findByProductIdOrderByPrimaryDescDisplayOrderAscIdAsc(id)
                 .stream().map(ProductImage::getUrl).toList();
         productRepository.delete(product);
@@ -125,8 +199,22 @@ public class ProductService {
         });
     }
 
+    /** Saves now, so a SKU another product holds is a 409 here and not a 500 at commit. */
+    private Product saveChecked(Product product) {
+        if (product.getSku() != null && productRepository.skuTakenByOther(product.getSku(), product.getId())) {
+            throw new CatalogConflictException("sku_already_exists");
+        }
+        try {
+            return productRepository.saveAndFlush(product);
+        } catch (DataIntegrityViolationException e) {
+            // lost a race on the SKU: someone saved it between the check and this write
+            throw new CatalogConflictException("sku_already_exists");
+        }
+    }
+
     private void apply(Product product, ProductRequest request) {
         product.setName(request.name().strip());
+        product.setSku(request.sku() == null || request.sku().isBlank() ? null : request.sku().strip());
         product.setDescription(request.description());
         product.setPrice(request.price());
         product.setStockQuantity(request.stockQuantity());
@@ -134,6 +222,10 @@ public class ProductService {
         product.setBrand(request.brandId() == null ? null : brandService.require(request.brandId()));
         product.setAttributes(request.attributes());
         product.setActive(request.active() == null || request.active());
+        if (product.isActive()) {
+            // showing an archived product again brings it back into the everyday list
+            product.setArchivedAt(null);
+        }
         product.setWeightKg(request.weightKg());
         product.setWidthCm(request.widthCm());
         product.setHeightCm(request.heightCm());
@@ -148,8 +240,8 @@ public class ProductService {
         List<ProductImageResponse> images = imageRepository.findByProductIdOrderByPrimaryDescDisplayOrderAscIdAsc(p.getId())
                 .stream().map(ProductImageService::toResponse).toList();
         return new ProductDetail(
-                p.getId(), p.getName(), p.getDescription(), p.getPrice(),
-                p.getStockQuantity(), p.getStockQuantity() > 0, p.isActive(),
+                p.getId(), p.getName(), p.getSku(), p.getDescription(), p.getPrice(),
+                p.getStockQuantity(), p.getStockQuantity() > 0, p.isActive(), p.getArchivedAt() != null,
                 CategoryService.toRef(p.getCategory()), categoryService.breadcrumb(p.getCategory()),
                 BrandService.toResponse(p.getBrand()), images, p.getAttributes(),
                 new Measurements(p.getWeightKg(), p.getWidthCm(), p.getHeightCm(), p.getDepthCm(),
@@ -175,6 +267,27 @@ public class ProductService {
                         imageRepository.findByProductIdOrderByPrimaryDescDisplayOrderAscIdAsc(v.getId()).stream()
                                 .findFirst().map(ProductImage::getUrl).orElse(null)))
                 .toList();
+    }
+
+    /** What an edit is compared on for the audit log; the field names are the ones the edit page shows. */
+    private static Map<String, Object> snapshot(Product p) {
+        Map<String, Object> s = new HashMap<>();
+        s.put("name", p.getName());
+        s.put("SKU", p.getSku());
+        s.put("description", p.getDescription());
+        s.put("price", p.getPrice() == null ? null : p.getPrice().stripTrailingZeros());
+        s.put("stock", p.getStockQuantity());
+        s.put("category", p.getCategory() == null ? null : p.getCategory().getId());
+        s.put("brand", p.getBrand() == null ? null : p.getBrand().getId());
+        s.put("details", p.getAttributes());
+        s.put("shown in the shop", p.isActive());
+        s.put("weight", p.getWeightKg() == null ? null : p.getWeightKg().stripTrailingZeros());
+        s.put("size", List.of(String.valueOf(p.getWidthCm()), String.valueOf(p.getHeightCm()), String.valueOf(p.getDepthCm())));
+        return s;
+    }
+
+    static String euros(BigDecimal amount) {
+        return "€" + amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     /** "Colour: Green, Size: Large", so two variants of one product can be told apart in a cart. */

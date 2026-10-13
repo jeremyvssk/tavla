@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -29,5 +30,7 @@ public record ProductRequest(
         @DecimalMin(value = "0", inclusive = false) @Digits(integer = 6, fraction = 3) BigDecimal weightKg,
         @DecimalMin(value = "0", inclusive = false) @Digits(integer = 6, fraction = 2) BigDecimal widthCm,
         @DecimalMin(value = "0", inclusive = false) @Digits(integer = 6, fraction = 2) BigDecimal heightCm,
-        @DecimalMin(value = "0", inclusive = false) @Digits(integer = 6, fraction = 2) BigDecimal depthCm) {
+        @DecimalMin(value = "0", inclusive = false) @Digits(integer = 6, fraction = 2) BigDecimal depthCm,
+        // Optional; blank is the same as none. Unique ignoring case, checked by the service and the database.
+        @Size(max = Skus.MAX) @Pattern(regexp = "(" + Skus.PATTERN + ")?", message = Skus.MESSAGE) String sku) {
 }

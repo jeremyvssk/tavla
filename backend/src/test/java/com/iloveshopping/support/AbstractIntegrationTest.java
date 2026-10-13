@@ -2,6 +2,9 @@
 package com.iloveshopping.support;
 
 import org.junit.jupiter.api.BeforeEach;
+import com.iloveshopping.crypto.BlindIndex;
+import com.iloveshopping.crypto.FieldCipher;
+import com.iloveshopping.user.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -78,10 +81,26 @@ public abstract class AbstractIntegrationTest {
     @Autowired
     protected WebApplicationContext context;
 
+    @Autowired
+    private BlindIndex blindIndex;
+
+    @Autowired
+    private FieldCipher fieldCipher;
+
     protected MockMvc mockMvc;
 
     @BeforeEach
     void initMockMvc() {
         mockMvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
+    }
+
+    /** users.email is ciphertext (V16): SQL in tests finds a user by this, {@code WHERE email_hash = ?}. */
+    protected String emailHash(String email) {
+        return blindIndex.of(UserService.normalizeEmail(email));
+    }
+
+    /** A value as an encrypted column stores it, for SQL that writes one directly. */
+    protected String sealed(String value) {
+        return fieldCipher.encrypt(value);
     }
 }

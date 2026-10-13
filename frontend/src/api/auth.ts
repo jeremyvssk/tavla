@@ -1,5 +1,5 @@
 // Typed calls to the /auth endpoints.
-import { api } from './client';
+import { api, setAccessToken } from './client';
 
 export interface Me {
   id: string;
@@ -55,8 +55,14 @@ export async function startTwoFactorSetup(password: string): Promise<{ secret: s
   return (await api.post('/auth/2fa/setup', { password })).data;
 }
 
+/**
+ * Turning it on also upgrades this session: the answer carries a new access token that says the second factor
+ * was given, so a staff member's admin pages open without signing in again. The refresh cookie is marked too.
+ */
 export async function enableTwoFactor(code: string): Promise<string[]> {
-  return (await api.post<{ backupCodes: string[] }>('/auth/2fa/enable', { code })).data.backupCodes;
+  const { backupCodes, accessToken } = (await api.post<{ backupCodes: string[]; accessToken: string }>('/auth/2fa/enable', { code })).data;
+  setAccessToken(accessToken);
+  return backupCodes;
 }
 
 export async function disableTwoFactor(password: string) {

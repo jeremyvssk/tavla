@@ -63,10 +63,16 @@ export interface CategoryNode extends CategoryRef {
 export interface ProductDetail {
   id: string;
   name: string;
+  /** the shop's own article code; bulk uploads match on it */
+  sku: string | null;
   description: string | null;
   price: number;
   stockQuantity: number;
   inStock: boolean;
+  /** false: hidden from the shop (only staff ever load a hidden product) */
+  active: boolean;
+  /** taken out of the shop for good because past orders point at it */
+  archived: boolean;
   category: CategoryRef;
   breadcrumb: CategoryRef[];
   brand: { id: number; name: string; slug: string; logoUrl: string | null } | null;
@@ -103,25 +109,28 @@ export interface Review {
   body: string;
   verifiedPurchase: boolean;
   createdAt: string;
-  // PLANNED (helpful votes): the page shows votes and Report only once the API sends these
-  /** "Toomas R.": first name and initial, never the email */
-  authorName?: string;
-  helpfulCount?: number;
-  notHelpfulCount?: number;
-  /** the signed-in shopper's own vote */
-  myVote?: 'helpful' | 'not_helpful' | null;
+  /** "Toomas R.": first name and initial, never the email; null for a deleted account */
+  authorName: string | null;
+  helpfulCount: number;
+  /** the signed-in shopper's own vote; there is no "not helpful" */
+  myVote: 'helpful' | null;
+  /** false only on the shopper's own hidden review, which only its author is sent */
+  published: boolean;
 }
 
 export type ReviewSort = 'helpful' | 'newest' | 'highest' | 'lowest';
 
-/** PLANNED: GET /products/{id}/reviews/summary. The spread behind the average, and whether this shopper may review. */
+/** GET /products/{id}/reviews/summary. The spread behind the average, and whether this shopper may review. */
 export interface ReviewSummary {
   average: number | null;
   count: number;
   /** reviews per star, index 0 = one star */
   distribution: [number, number, number, number, number];
-  /** null for guests */
-  me: { purchasedAt: string | null; reviewed: boolean } | null;
+  /**
+   * null for guests. purchasedAt: when their delivered order with it was placed (null: they can't review it yet).
+   * review and hiddenReason: their own review, hidden ones too, and why staff hid it.
+   */
+  me: { purchasedAt: string | null; reviewed: boolean; review: Review | null; hiddenReason: string | null } | null;
 }
 
 export interface Page<T> {
@@ -179,13 +188,13 @@ export async function fetchReviewSummary(productId: string): Promise<ReviewSumma
   return (await api.get(`/products/${encodeURIComponent(productId)}/reviews/summary`)).data;
 }
 
-/** PLANNED: PUT sets or changes the shopper's vote; DELETE takes it back. One vote per signed-in shopper. */
-export async function voteReview(productId: string, reviewId: string, vote: 'helpful' | 'not_helpful' | null): Promise<Review> {
+/** PUT marks it helpful; DELETE takes the vote back. One vote per signed-in shopper, never on their own review. */
+export async function voteReview(productId: string, reviewId: string, vote: 'helpful' | null): Promise<Review> {
   const url = `/products/${encodeURIComponent(productId)}/reviews/${encodeURIComponent(reviewId)}/vote`;
   return (vote === null ? await api.delete(url) : await api.put(url, { vote })).data;
 }
 
-/** PLANNED: POST /products/{id}/reviews/{reviewId}/report. Puts the review in the staff's moderation queue. */
+/** Puts the review in the staff's moderation queue; it stays shown until staff decide. */
 export async function reportReview(productId: string, reviewId: string, reason: string) {
   await api.post(`/products/${encodeURIComponent(productId)}/reviews/${encodeURIComponent(reviewId)}/report`, { reason });
 }

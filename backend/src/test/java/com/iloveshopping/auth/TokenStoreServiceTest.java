@@ -14,6 +14,8 @@ import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.RedisScript;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -41,14 +44,14 @@ class TokenStoreServiceTest {
     void setUp() {
         lenient().when(redis.opsForValue()).thenReturn(valueOps);
         lenient().when(redis.opsForSet()).thenReturn(setOps);
-        service = new TokenStoreService(redis, "P7D");
+        service = new TokenStoreService(redis, "P7D", "PT15M");
     }
 
     @Test
     void issueRefreshToken_storesHashedTokenWithTtlAndTracksInUserSet() {
         UUID userId = UUID.randomUUID();
 
-        String raw = service.issueRefreshToken(userId);
+        String raw = service.issueRefreshToken(new TokenStoreService.Session(userId, false));
 
         // The raw token is returned to the client but never stored as-is.
         String expectedHash = OpaqueTokens.sha256(raw);
@@ -57,12 +60,32 @@ class TokenStoreServiceTest {
     }
 
     @Test
+    void aSessionThatPassedASecondFactor_isStoredWithTheFlagAndReadBackWithIt() {
+        UUID userId = UUID.randomUUID();
+
+        String raw = service.issueRefreshToken(new TokenStoreService.Session(userId, true));
+
+        String key = "refresh_token:" + OpaqueTokens.sha256(raw);
+        verify(valueOps).set(key, userId + " 2fa", Duration.ofDays(7));
+        when(valueOps.get(key)).thenReturn(userId + " 2fa");
+        assertThat(service.findSessionByRefreshToken(raw)).contains(new TokenStoreService.Session(userId, true));
+    }
+
+    @Test
+    void aValueWrittenBeforeSessionsCarriedTheFlag_readsAsNoSecondFactor() {
+        UUID userId = UUID.randomUUID();
+        when(valueOps.get("refresh_token:" + OpaqueTokens.sha256("old"))).thenReturn(userId.toString());
+
+        assertThat(service.findSessionByRefreshToken("old")).contains(new TokenStoreService.Session(userId, false));
+    }
+
+    @Test
     void rotateRefreshToken_returnsNewTokenWhenScriptSucceeds() {
         UUID userId = UUID.randomUUID();
         when(redis.execute(any(RedisScript.class), any(List.class), any(), any(), any(), any()))
                 .thenReturn(1L);
 
-        String newRaw = service.rotateRefreshToken(userId, "old-raw-token");
+        String newRaw = service.rotateRefreshToken(new TokenStoreService.Session(userId, false), "old-raw-token");
 
         assertThat(newRaw).isNotBlank().isNotEqualTo("old-raw-token");
     }
@@ -73,7 +96,7 @@ class TokenStoreServiceTest {
         when(redis.execute(any(RedisScript.class), any(List.class), any(), any(), any(), any()))
                 .thenReturn(0L);
 
-        assertThatThrownBy(() -> service.rotateRefreshToken(userId, "stale-token"))
+        assertThatThrownBy(() -> service.rotateRefreshToken(new TokenStoreService.Session(userId, false), "stale-token"))
                 .isInstanceOf(InvalidRefreshTokenException.class);
     }
 
@@ -146,12 +169,34 @@ class TokenStoreServiceTest {
     }
 
     @Test
-    void isAccessTokenBlocklisted_reflectsKeyPresence() {
-        when(redis.hasKey("token_blocklist:live")).thenReturn(true);
-        when(redis.hasKey("token_blocklist:gone")).thenReturn(false);
+    void isAccessTokenRevoked_readsTheBlocklistAndTheUsersCutoffInOneRoundTrip() {
+        UUID userId = UUID.randomUUID();
+        Instant issued = Instant.ofEpochSecond(1_000);
+        List<String> keys = List.of("token_blocklist:jti", "tokens_revoked_before:" + userId);
 
-        assertThat(service.isAccessTokenBlocklisted("live")).isTrue();
-        assertThat(service.isAccessTokenBlocklisted("gone")).isFalse();
+        when(valueOps.multiGet(keys)).thenReturn(Arrays.asList("1", null));
+        assertThat(service.isAccessTokenRevoked("jti", userId, issued)).as("logged out").isTrue();
+
+        when(valueOps.multiGet(keys)).thenReturn(Arrays.asList(null, null));
+        assertThat(service.isAccessTokenRevoked("jti", userId, issued)).as("nothing against it").isFalse();
+
+        when(valueOps.multiGet(keys)).thenReturn(Arrays.asList(null, "1000"));
+        assertThat(service.isAccessTokenRevoked("jti", userId, issued)).as("issued in the cut-off's second").isTrue();
+
+        when(valueOps.multiGet(keys)).thenReturn(Arrays.asList(null, "999"));
+        assertThat(service.isAccessTokenRevoked("jti", userId, issued)).as("issued after the cut-off").isFalse();
+    }
+
+    @Test
+    void revokeAccessTokens_setsTheCutoffForAsLongAsAnAccessTokenLives() {
+        UUID userId = UUID.randomUUID();
+        long before = Instant.now().getEpochSecond();
+
+        service.revokeAccessTokens(userId);
+
+        ArgumentCaptor<String> value = ArgumentCaptor.forClass(String.class);
+        verify(valueOps).set(eq("tokens_revoked_before:" + userId), value.capture(), eq(Duration.ofMinutes(15)));
+        assertThat(Long.parseLong(value.getValue())).isBetween(before, before + 1);
     }
 
     @Test

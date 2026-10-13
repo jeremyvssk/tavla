@@ -45,6 +45,19 @@ public class ProductReview {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** NEW, LIVE, REPORTED or HIDDEN; see V14. Only staff moderation and a shopper's report change it. */
+    @Column(nullable = false)
+    private String status = "NEW";
+
+    /** Why staff hid it; set exactly when the status is HIDDEN (ck_product_reviews_hidden_reason). */
+    @Column(name = "hidden_reason")
+    private String hiddenReason;
+
+    // Changed only by the vote statements in ProductReviewRepository, as +1 and -1 in SQL, so two votes at once
+    // both count; never written from here, where a stale copy would overwrite a newer count.
+    @Column(name = "helpful_count", insertable = false, updatable = false)
+    private int helpfulCount;
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();

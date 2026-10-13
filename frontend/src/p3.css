@@ -1254,10 +1254,6 @@ textarea.in{height:auto;min-height:9rem;padding:.75rem 1rem;line-height:1.5;resi
 .roleopts.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 .imp-foot{justify-content:space-between}
 .imp-foot > .row{gap:1rem}
-.imp-prog{height:.5rem;border-radius:999px;background:var(--well);overflow:hidden}
-/* scaleX, not width: the bar grows on the compositor, no layout per frame */
-.imp-prog i{display:block;height:100%;background:var(--ok);transform-origin:left;transition:transform .4s cubic-bezier(.23,1,.32,1)}
-@media (prefers-reduced-motion:reduce){.imp-prog i{transition:none}}
 @media (max-width:40rem){.roleopts.two{grid-template-columns:minmax(0,1fr)}.imp-foot > .row{width:100%}.imp-foot .btn{flex:1}}
 
 /* admin reviews: the reason picker inside a review's actions and inside the dark bulk bar */
@@ -1411,3 +1407,9 @@ textarea.in{height:auto;min-height:9rem;padding:.75rem 1rem;line-height:1.5;resi
   .slip{max-width:none;padding:0;box-shadow:none;border-radius:0;break-after:page}
   .slip:last-child{break-after:auto}
 }
+
+/* admin: the page's own confirm dialog (parts.tsx useConfirm), narrower than a form modal */
+.modal.confirm{width:min(28rem,calc(100% - 2rem))}
+.modal.confirm .modal-b{padding-bottom:1.2rem;font-size:.95rem;line-height:1.5}
+.modal.confirm .modal-b p{margin:0 0 .6rem}
+.modal.confirm .modal-b p:last-child{margin:0}

@@ -30,13 +30,23 @@ by the wrong actor, is refused with `409 order_status_conflict`. Every move writ
 | `PAYMENT_FAILED` | `PENDING_PAYMENT` | Shopper | "Try another card": same PaymentIntent, so never two payments |
 | `PAYMENT_FAILED` | `PAYMENT_SUCCESSFUL` | Stripe | A late success for an earlier attempt still counts: the money moved |
 | `PAYMENT_FAILED` | `CANCELLED` | Timer | As above |
-| `PAYMENT_SUCCESSFUL` | `PROCESSING` | Admin | Packing starts (admin tools are Project 3) |
+| `PAYMENT_SUCCESSFUL` | `PROCESSING` | Admin | Packing starts; from here the shopper can't cancel. Staff use `POST /staff/orders/{id}/status` or the bulk "Start packing" |
 | `PAYMENT_SUCCESSFUL` | `CANCELLED` | Shopper, Admin | Stock back on sale (not back in the cart); payment `REFUND_DUE`; cancellation email; then the Stripe refund is asked for |
-| `PROCESSING` | `SHIPPED` | Admin | |
-| `SHIPPED` | `DELIVERED` | Admin | |
+| `PROCESSING` | `SHIPPED` | Admin | Courier (Omniva or DPD) and parcel number saved (the number encrypted); "on its way" email |
+| `PROCESSING` | `CANCELLED` | Admin | As the cancel above, with the reason on the history: staff can still stop it before it leaves |
+| `SHIPPED` | `DELIVERED` | Admin | "Delivered" email; the shopper may now review what was in it |
 | `CANCELLED` | `REFUNDED` | Stripe | Stripe's answer to the refund request, or its `charge.refunded` webhook; refund email |
 
-`DELIVERED` and `REFUNDED` have no moves out.
+`DELIVERED` and `REFUNDED` have no moves out. "Admin" in this table means any staff role with the order desk
+(Support or Admin, `auth/StaffArea`); the history row names the person (`order_status_history.actor_user_id`).
+
+**Part refunds aren't a status.** From `PROCESSING`, `SHIPPED` or `DELIVERED`, staff can give back some lines
+and the shipping (`POST /staff/orders/{id}/refunds`, `order/StaffOrderService.refund`). The order keeps its
+status; the refund is a row in `refunds` with its lines, worked out from the order's own prices under the
+order's row lock, so a line can't be refunded twice. Support may refund up to €100 per order in all, an admin
+any amount. The items are not put back on sale (a part refund is for something broken or missing). Stripe is
+asked after the commit with `refund-part-{refundId}` as the idempotency key; if it can't be reached the refund
+stays `DUE` and `RefundRetry` asks again.
 
 ## The rules behind the table
 
@@ -68,7 +78,8 @@ again. `PaymentEventListener` applies it. A message that throws is retried (3 tr
 to `orders.payment-events.dlq`. Emails go through a second queue, `orders.emails`, published only after
 the order's transaction commits, so a rolled-back change never sends an email.
 
-**Cancelling is a status move with a refund behind it.** Allowed only from `PAYMENT_SUCCESSFUL`; anything
+**Cancelling is a status move with a refund behind it.** The shopper may cancel only from `PAYMENT_SUCCESSFUL`
+(staff also from `PROCESSING`); for the shopper anything
 later (packing has started) or earlier (not paid) answers `409 order_not_cancellable`, decided on the
 server under the order's row lock. A second click finds it `CANCELLED` and changes nothing. The refund
 is asked for after the cancellation commits, with `refund-{orderId}` as Stripe's idempotency key, so a
@@ -87,7 +98,5 @@ because only the browser can confirm a payment and it never got the secret.
 
 ## Still to build
 
-- Project 3: the admin moves (`PROCESSING`, `SHIPPED`, `DELIVERED`) and an admin cancel. The table
-  already allows them; no endpoint makes them yet.
 - A refund Stripe declines after accepting it (`refund.failed`) isn't handled: rare with cards, and it
   would show in Stripe's dashboard.

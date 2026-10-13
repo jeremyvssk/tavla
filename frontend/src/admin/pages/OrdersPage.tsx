@@ -5,7 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { AdminOrderRow, exportOrders, fetchAdminOrders, moveOrder, startPacking } from '../../api/admin';
 import { toApiError } from '../../api/errors';
 import Icon from '../../components/Icon';
-import { shippingName, StatusPill } from '../../components/OrderParts';
+import { StatusPill } from '../../components/OrderParts';
 import { PHONE, useMediaQuery } from '../../hooks/useMediaQuery';
 import { formatPrice } from '../../lib/format';
 import type { ShippingMethod } from '../../lib/shipping';
@@ -211,7 +211,7 @@ export default function OrdersPage() {
                       <td className="nw">{r.customerName}{r.guest && ' · guest'}</td>
                       <td className="r">{r.itemCount}</td>
                       <td className="r">{formatPrice(r.total)}</td>
-                      <td className="mutet">{shippingName(r.shippingMethod as ShippingMethod).replace(/ courier$/, '')}</td>
+                      <td className="mutet">{r.shippingMethod.replace(/ courier$/, '')}</td>
                       <td className="r"><NextStep row={r} onPack={() => pack.mutate([r.id])} onDeliver={() => deliver.mutate(r)}
                         busy={pack.isPending || deliver.isPending} /></td>
                     </tr>

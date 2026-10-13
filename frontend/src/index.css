@@ -76,7 +76,9 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:var(--field);color:var(--ink);padding:0 2.8rem 0 2.75rem;font-size:.92rem;
   -webkit-appearance:none;appearance:none;transition:border-color .2s ease}
 .t-search input::placeholder{color:var(--mute)}
+/* the darker border alone was too faint to find the keyboard focus by; the ring matches every other control's */
 .t-search input:focus,.t .t-search input:focus-visible{outline:none;border-color:var(--mute)}
+.t .t-search input:focus-visible{box-shadow:0 0 0 2px var(--hi)}
 .t-search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
 .t-search .clr{position:absolute;right:.35rem;width:2.1rem;height:2.1rem;border:0;border-radius:999px;background:none;cursor:pointer;
   display:grid;place-items:center;color:var(--mute)}

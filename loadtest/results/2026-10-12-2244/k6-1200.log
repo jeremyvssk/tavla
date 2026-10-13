@@ -1,0 +1,59 @@
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✗ 'p(90)<2000' p(90)=2.9s
+
+    http_req_failed
+    ✓ 'rate<0.05' rate=1.69%
+
+    journey_ok
+    ✗ 'rate>0.98' rate=95.62%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 21178  288.587435/s
+    checks_succeeded...: 98.30% 20819 out of 21178
+    checks_failed......: 1.69%  359 out of 21178
+
+    ✓ suggestions
+    ✓ categories
+    ✓ product
+    ✓ login
+    ✓ listing
+    ✗ add to cart
+      ↳  77% — ✓ 551 / ✗ 157
+    ✓ profile
+    ✓ search
+    ✓ cart
+    ✓ my orders
+    ✓ delivery options
+    ✓ reviews
+    ✗ place order
+      ↳  68% — ✓ 446 / ✗ 202
+
+    CUSTOM
+    journey_ok.....................: 95.62% 4092 out of 4279
+    transactions...................: 4279   58.308888/s
+
+    HTTP
+    http_req_duration..............: avg=1.19s  med=691.07ms p(90)=2.9s   p(95)=4.59s  p(99)=7.23s  max=10.7s
+      { expected_response:true }...: avg=1.2s   med=691.03ms p(90)=2.9s   p(95)=4.66s  p(99)=7.25s  max=10.7s
+    http_req_failed................: 1.69%  359 out of 21223
+    http_reqs......................: 21223  289.200639/s
+
+    EXECUTION
+    iteration_duration.............: avg=17.54s med=17.36s   p(90)=22.83s p(95)=24.84s p(99)=28.56s max=32.8s
+    iterations.....................: 4279   58.308888/s
+    vus............................: 409    min=0            max=1200
+    vus_max........................: 1200   min=1200         max=1200
+
+    NETWORK
+    data_received..................: 87 MB  1.2 MB/s
+    data_sent......................: 2.6 MB 36 kB/s
+
+
+
+time="2026-10-12T19:45:45Z" level=error msg="thresholds on metrics 'http_req_duration, journey_ok' have been crossed"
