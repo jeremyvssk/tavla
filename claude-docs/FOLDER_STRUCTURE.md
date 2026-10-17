@@ -6,16 +6,16 @@ real. Keep this file honest; a structure doc that lists imaginary files is worse
 ```
 i-love-shopping1/
 ├── CLAUDE.md
-├── README.md                    # graded deliverable: overview, ERD, setup, usage, what works
-├── REVIEW_ANSWERS.md            # one answer per review-checklist item, with code + test refs
+├── README.md                    # for hiring managers: what it is, what works, how to run it
 ├── start.sh                     # one-command startup
 ├── docker-compose.yml           # postgres, redis, rabbitmq, mailhog, backend, frontend, stripe-cli
 ├── rabbitmq/enabled_plugins     # management page + shovel ("Move messages" out of a dead letter queue)
 ├── .env.example                 # every variable, placeholders only
 │
 ├── docs/
-│   ├── ASSIGNMENT.md            # the Project 1 brief, verbatim
-│   ├── ASSIGNMENT2.md           # the Project 2 brief and review checklist
+│   ├── USAGE.md                 # how to try each feature, the API, troubleshooting
+│   ├── ARCHITECTURE.md          # how it works, database diagrams
+│   ├── PERFORMANCE.md           # load test report
 │   ├── i-love-shopping-erd.png
 │   └── examples/                # bulk upload files: products-good.csv, products-bad.csv, products.json
 ├── loadtest/                    # k6: shop.js (journeys), run.sh (separate ils-load stack, steps, docker stats),

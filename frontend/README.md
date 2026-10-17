@@ -120,9 +120,9 @@ The dev server forwards API calls to the backend on port 8080, the same way ngin
 
 Google login and CAPTCHA appear only when `VITE_GOOGLE_CLIENT_ID` and `VITE_RECAPTCHA_SITE_KEY`
 are set. With Docker, these come from `GOOGLE_CLIENT_ID` and `RECAPTCHA_SITE_KEY` in the root
-`.env`. See the main [README](../README.md#needs-your-own-google-keys). The card form needs
+`.env`. See the [usage guide](../docs/USAGE.md#needs-your-own-google-keys). The card form needs
 `VITE_STRIPE_PUBLISHABLE_KEY` the same way (from `STRIPE_PUBLISHABLE_KEY`, see
-[Setup](../README.md#setup)).
+[Run it](../README.md#run-it)).
 
 ## Tests
 

@@ -253,5 +253,4 @@ Project 3's tests: `StaffAccessIT` (every role against every area), `StaffUserIT
 `OverviewIT`, `AccountIT`, `UserEncryptionIT` (ciphertext in `users`, sign-in by the blind index, the backfill), `TokenBucketIT`, `RateLimitIT`, `ProductImageIT` (the sizes); unit tests `ImageProcessorTest`, `CsvTest`, `CsvReaderTest`, `PriceGuardTest`, `DeliveryOptionTest`.
 
 **Finding the tests for a feature:** the test is named after the class, e.g. `TwoFactorService` →
-`TwoFactorServiceTest`, and `TwoFactorController` → `TwoFactorControllerIT`. For which tests cover
-which review checklist item, see [../REVIEW_ANSWERS.md](../REVIEW_ANSWERS.md).
+`TwoFactorServiceTest`, and `TwoFactorController` → `TwoFactorControllerIT`.

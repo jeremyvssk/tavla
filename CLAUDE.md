@@ -8,14 +8,16 @@ management, delivery options, bulk upload, review moderation), reviews with help
 account and addresses, and the contact form. Projects 1 (auth, database, catalog) and 2 (cart, checkout,
 Stripe payments, orders) are done. P3 build steps and their status: [claude-docs/BUILD_ORDER.md](claude-docs/BUILD_ORDER.md).
 
-The assignment brief and its review checklist are in [docs/ASSIGNMENT3.md](docs/ASSIGNMENT3.md).
-[README.md](README.md) is the graded deliverable — overview, ERD, setup, usage. Keep its
+[README.md](README.md) is written for hiring managers: what Tavla is, what works, what's worth a look,
+how to run it. Keep its
 **What works** section honest; a README claiming unbuilt features is worse than no README. It is
 written for non-experts: plain language, short, no design essays. The detail lives elsewhere:
 
 | Doc | Holds |
 |---|---|
-| [REVIEW_ANSWERS.md](REVIEW_ANSWERS.md) | One answer per review-checklist item, with code paths and test names |
+| [docs/USAGE.md](docs/USAGE.md) | How to try each feature: the admin area, test cards, 2FA, Google keys, the API, troubleshooting |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How login, search, payments, the staff area and encryption work, and the database diagrams |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | The load test report |
 | [backend/README.md](backend/README.md) | Feature → file map, request flow, Redis keys, migrations, test layout |
 | [frontend/README.md](frontend/README.md) | Folders, pages, how the token/session works, test layout |
 
